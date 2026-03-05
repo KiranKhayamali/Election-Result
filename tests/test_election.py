@@ -290,3 +290,85 @@ def test_api_export_csv_empty_cache(client):
     resp = client.get("/api/export/csv")
     assert resp.status_code == 200
     assert b"No data available" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# scraper._aggregate_party_tally
+# ---------------------------------------------------------------------------
+
+TALLY_RESULTS = [
+    {"party": "Nepali Congress", "votes": "24500", "status": "Won"},
+    {"party": "CPN-UML",         "votes": "19800", "status": "Won"},
+    {"party": "CPN-UML",         "votes": "22100", "status": "Won"},
+    {"party": "Nepali Congress", "votes": "17800", "status": "Leading"},
+    {"party": "Rastriya Swatantra Party", "votes": "31000", "status": "Won"},
+]
+
+
+def test_aggregate_party_tally_counts():
+    """Verify won, leading, and total-seats counts per party."""
+    tally = scraper._aggregate_party_tally(TALLY_RESULTS)
+    by_party = {p["party"]: p for p in tally}
+
+    assert by_party["Nepali Congress"]["won"] == 1
+    assert by_party["Nepali Congress"]["leading"] == 1
+    assert by_party["Nepali Congress"]["seats"] == 2
+
+    assert by_party["CPN-UML"]["won"] == 2
+    assert by_party["CPN-UML"]["leading"] == 0
+    assert by_party["CPN-UML"]["seats"] == 2
+
+    assert by_party["Rastriya Swatantra Party"]["seats"] == 1
+
+
+def test_aggregate_party_tally_sorted_by_seats():
+    """Tally list must be sorted by total seats descending."""
+    tally = scraper._aggregate_party_tally(TALLY_RESULTS)
+    seats = [p["seats"] for p in tally]
+    assert seats == sorted(seats, reverse=True)
+
+
+def test_aggregate_party_tally_total_votes():
+    """total_votes must be the sum of all rows for that party."""
+    tally = scraper._aggregate_party_tally(TALLY_RESULTS)
+    by_party = {p["party"]: p for p in tally}
+    assert by_party["Nepali Congress"]["total_votes"] == 24500 + 17800
+    assert by_party["CPN-UML"]["total_votes"] == 19800 + 22100
+
+
+def test_aggregate_party_tally_empty():
+    """Empty input must return an empty list."""
+    assert scraper._aggregate_party_tally([]) == []
+
+
+def test_aggregate_party_tally_no_status():
+    """Rows without a status field should not be counted as won or leading."""
+    results = [
+        {"party": "Test Party", "votes": "5000"},
+    ]
+    tally = scraper._aggregate_party_tally(results)
+    assert len(tally) == 1
+    assert tally[0]["won"] == 0
+    assert tally[0]["leading"] == 0
+    assert tally[0]["seats"] == 0
+
+
+def test_aggregate_party_tally_nepali_status():
+    """Nepali-language status keywords should be recognised."""
+    results = [
+        {"party": "Test Party", "votes": "1000", "status": "निर्वाचित"},
+        {"party": "Test Party", "votes": "900",  "status": "अग्रणी"},
+    ]
+    tally = scraper._aggregate_party_tally(results)
+    assert len(tally) == 1
+    assert tally[0]["won"] == 1
+    assert tally[0]["leading"] == 1
+
+
+def test_api_results_includes_party_tally(client):
+    """The /api/results endpoint must include a party_tally list."""
+    resp = client.get("/api/results")
+    assert resp.status_code == 200
+    payload = json.loads(resp.data)
+    assert "party_tally" in payload
+    assert isinstance(payload["party_tally"], list)

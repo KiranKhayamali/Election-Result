@@ -11,18 +11,23 @@
 <!-- ===== Header ===== -->
 <header>
   <div class="header-inner">
-    <div class="logo">🗳️</div>
-    <div>
-      <h1>Nepal Election Results 2082</h1>
-      <p class="subtitle">Real-time updates from Election Commission of Nepal</p>
+    <div class="header-left">
+      <span class="flag-icon">🇳🇵</span>
+      <div>
+        <h1>Nepal Election Results <span class="year-badge">2082 BS</span></h1>
+        <p class="subtitle">House of Representatives · Real-time updates from Election Commission of Nepal</p>
+      </div>
     </div>
-    <div class="live-badge" id="liveBadge">
-      <span class="dot"></span> LIVE
+    <div class="header-right">
+      <div class="live-badge" id="liveBadge">
+        <span class="dot"></span> LIVE
+      </div>
+      <div class="last-updated-header" id="lastUpdatedHeader"></div>
     </div>
   </div>
 </header>
 
-<!-- ===== Status bar ===== -->
+<!-- ===== Status / Progress bar ===== -->
 <div class="status-bar">
   <div class="status-inner">
     <span id="statusText">
@@ -45,24 +50,6 @@
 <!-- ===== Main content ===== -->
 <main>
 
-  <!-- Summary cards -->
-  {% if data.summary %}
-  <section class="summary-section">
-    <h2>Summary</h2>
-    <div class="card-grid">
-      {% for key, value in data.summary.items() %}
-      <div class="card">{{ value }}</div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <!-- Party chart -->
-  <section class="chart-section" id="chartSection" style="display:none;">
-    <h2>Party Seat Distribution</h2>
-    <div class="chart-container" id="chartContainer"></div>
-  </section>
-
   <!-- Error notice -->
   {% if data.error %}
   <div class="alert alert-error">
@@ -71,24 +58,107 @@
   </div>
   {% endif %}
 
+  <!-- Seat overview -->
+  <section class="seat-overview">
+    <div class="seat-stats">
+      <div class="stat-card">
+        <span class="stat-number" id="totalDeclared">0</span>
+        <span class="stat-label">Seats Declared</span>
+      </div>
+      <div class="stat-card stat-card--total">
+        <span class="stat-number">275</span>
+        <span class="stat-label">Total HoR Seats</span>
+      </div>
+      <div class="stat-card stat-card--majority">
+        <span class="stat-number">138</span>
+        <span class="stat-label">Majority Needed</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" id="leadingPartyName">–</span>
+        <span class="stat-label">Largest Party</span>
+      </div>
+    </div>
+
+    <!-- Seats declared progress -->
+    <div class="declared-progress">
+      <div class="dp-label">
+        <span id="declaredPct">0%</span> of seats declared
+      </div>
+      <div class="dp-bar">
+        <div class="dp-fill" id="declaredFill"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Majority / Party tally bar -->
+  <section class="majority-section" id="majoritySection" style="display:none;">
+    <div class="section-title">Party Seat Tally</div>
+
+    <!-- Stacked majority bar -->
+    <div class="majority-bar-container">
+      <div class="majority-bar" id="majorityBar"></div>
+      <div class="majority-line" id="majorityLine">
+        <div class="majority-flag">138 – Majority</div>
+      </div>
+    </div>
+    <div class="majority-bar-labels">
+      <span>0</span>
+      <span>138</span>
+      <span>275</span>
+    </div>
+
+    <!-- Party tally cards -->
+    <div class="party-grid" id="partyGrid"></div>
+  </section>
+
+  <!-- Summary cards -->
+  {% if data.summary %}
+  <section class="summary-section">
+    <div class="section-title">Summary</div>
+    <div class="card-grid">
+      {% for key, value in data.summary.items() %}
+      <div class="card">{{ value }}</div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
   <!-- Results table -->
   <section class="results-section">
     <div class="section-header">
-      <h2>Results</h2>
+      <div class="section-title">Constituency Results</div>
       <div class="toolbar">
+        <select id="provinceFilter" class="filter-select" onchange="applyFilter()">
+          <option value="">All Provinces</option>
+          <option>Koshi Province</option>
+          <option>Madhesh Province</option>
+          <option>Bagmati Province</option>
+          <option>Gandaki Province</option>
+          <option>Lumbini Province</option>
+          <option>Karnali Province</option>
+          <option>Sudurpashchim Province</option>
+        </select>
+        <select id="partyFilter" class="filter-select" onchange="applyFilter()">
+          <option value="">All Parties</option>
+        </select>
+        <select id="statusFilter" class="filter-select" onchange="applyFilter()">
+          <option value="">All Results</option>
+          <option value="won">Won</option>
+          <option value="leading">Leading</option>
+        </select>
         <input
           type="search"
           id="searchInput"
           class="search-input"
-          placeholder="🔍 Search…"
+          placeholder="🔍 Search candidate, party…"
           oninput="applyFilter()"
           aria-label="Search results"
         />
         <button class="btn-export" onclick="exportCSV()" title="Download results as CSV">
-          ⬇ Export CSV
+          ⬇ CSV
         </button>
         <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
-          ↻ Refresh Now
+          ↻ Refresh
         </button>
       </div>
     </div>
@@ -111,23 +181,30 @@
             {% for row in data.results %}
             <tr>
               <td>{{ loop.index }}</td>
-              {% for val in row.values() %}
+              {% for key, val in row.items() %}
+              {% if key == 'status' %}
+              <td><span class="status-badge">{{ val }}</span></td>
+              {% elif key == 'party' %}
+              <td><span class="party-tag" data-party="{{ val | e }}">{{ val }}</span></td>
+              {% else %}
               <td>{{ val }}</td>
+              {% endif %}
               {% endfor %}
             </tr>
             {% endfor %}
           </tbody>
         </table>
-        <!-- Pagination -->
         <div class="pagination" id="pagination"></div>
         <p class="row-count" id="rowCount"></p>
       {% else %}
         <div class="empty-state">
-          <p>🔍 No results available yet.</p>
+          <div class="empty-icon">🗳️</div>
+          <p>No results available yet.</p>
           <p>The scraper is fetching data from
              <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_url }}</a>.
           </p>
           <p>Results will appear automatically once data is retrieved.</p>
+          <button class="btn-refresh" style="margin-top:1rem;" onclick="manualRefresh()">↻ Fetch Now</button>
         </div>
       {% endif %}
     </div>
@@ -143,65 +220,115 @@
 <!-- ===== Footer ===== -->
 <footer>
   <p>
-    Election Results Live Tracker &mdash; refreshes every {{ refresh_interval }} seconds.
-    Data sourced from public election portals via web scraping.
+    🇳🇵 Nepal Election Results Live Tracker — refreshes every {{ refresh_interval }} seconds.
+    Data sourced from <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Election Commission of Nepal</a>.
   </p>
 </footer>
 
 <!-- ===== JavaScript ===== -->
 <script>
   const REFRESH_INTERVAL = {{ refresh_interval }};
-  let secondsLeft = REFRESH_INTERVAL;
-  const progressFill  = document.getElementById('progressFill');
-  const countdownEl   = document.getElementById('countdown');
-  const statusTextEl  = document.getElementById('statusText');
-  const tableWrapper  = document.getElementById('tableWrapper');
-  const refreshBtn    = document.getElementById('refreshBtn');
+  const TOTAL_SEATS = 275;
+  const MAJORITY = 138;
 
-  // ---- All rows: each item is an array of *data* cells (no '#' column) ----
+  let secondsLeft = REFRESH_INTERVAL;
+  const progressFill   = document.getElementById('progressFill');
+  const countdownEl    = document.getElementById('countdown');
+  const statusTextEl   = document.getElementById('statusText');
+  const tableWrapper   = document.getElementById('tableWrapper');
+  const refreshBtn     = document.getElementById('refreshBtn');
+
+  // ---- Table state ----
   let allRows = [];
   let filteredRows = [];
-  let colHeaders = [];          // data column names (no '#')
+  let colHeaders = [];
+  let partyOptions = new Set();
   let sortState = { col: null, asc: true };
   const PAGE_SIZE = 25;
   let currentPage = 1;
-  const COMMA_RE = /,/g;        // reuse regex instead of compiling per comparison
+  const COMMA_RE = /,/g;
 
-  // Seed from server-rendered data
+  // ---- Party colour palette ----
+  const PARTY_COLORS = {
+    'nepali congress': '#1565C0',
+    'nc': '#1565C0',
+    'cpn-uml': '#C62828',
+    'uml': '#C62828',
+    'cpn (uml)': '#C62828',
+    'cpn maoist centre': '#B71C1C',
+    'cpn (maoist centre)': '#B71C1C',
+    'maoist': '#B71C1C',
+    'rastriya swatantra party': '#6A1B9A',
+    'rsp': '#6A1B9A',
+    'rastriya prajatantra party': '#2E7D32',
+    'rpp': '#2E7D32',
+    'janajati': '#E65100',
+    'independent': '#546E7A',
+    'others': '#455A64',
+  };
+  const FALLBACK_PALETTE = [
+    '#00838F','#00695C','#558B2F','#827717','#4E342E',
+    '#37474F','#6A1B9A','#AD1457','#0277BD','#FF6F00',
+  ];
+  let _colorCache = {};
+  let _colorIdx = 0;
+
+  function partyColor(name) {
+    if (!name) return '#546E7A';
+    const key = name.toLowerCase().trim();
+    if (_colorCache[key]) return _colorCache[key];
+    for (const [pattern, color] of Object.entries(PARTY_COLORS)) {
+      if (key.includes(pattern)) {
+        _colorCache[key] = color;
+        return color;
+      }
+    }
+    const c = FALLBACK_PALETTE[_colorIdx % FALLBACK_PALETTE.length];
+    _colorIdx++;
+    _colorCache[key] = c;
+    return c;
+  }
+
+  // ---- Seed from server-rendered data ----
   (function seedRows() {
     const tbody = document.getElementById('resultsBody');
     if (!tbody) return;
-    // Read column names from <th data-col="..."> skipping the '#' column
     const ths = Array.from(document.querySelectorAll('#resultsTable thead th[data-col]'));
-    colHeaders = ths
-      .map(th => th.dataset.col)
-      .filter(c => c && c !== '#');
+    colHeaders = ths.map(th => th.dataset.col).filter(c => c && c !== '#');
 
     const trs = Array.from(tbody.querySelectorAll('tr'));
-    // Each <tr> has: <td>#</td><td>col0</td>... – skip the first cell (row number)
     allRows = trs.map(tr => {
       const cells = Array.from(tr.querySelectorAll('td'));
       return cells.slice(1).map(c => c.textContent.trim());
     });
     filteredRows = allRows.slice();
+    buildPartyFilter(allRows, colHeaders);
+    colorizePartyTags();
+    colorizeStatusBadges();
     renderPage(1);
-    buildChart(allRows, colHeaders);
   })();
 
-  /* ---- countdown timer ---- */
+  // Seed party tally from server data
+  (function seedTally() {
+    const tallyData = {{ data.party_tally | tojson }};
+    if (tallyData && tallyData.length) {
+      renderPartyTally(tallyData);
+    }
+    updateSeatOverview(tallyData || []);
+  })();
+
+  // ---- Countdown / auto-refresh ----
   function tick() {
     secondsLeft -= 1;
-    countdownEl.textContent = secondsLeft;
+    if (countdownEl) countdownEl.textContent = secondsLeft;
     const pct = ((REFRESH_INTERVAL - secondsLeft) / REFRESH_INTERVAL) * 100;
-    progressFill.style.width = pct + '%';
-    if (secondsLeft <= 0) {
-      autoRefresh();
-    }
+    if (progressFill) progressFill.style.width = pct + '%';
+    if (secondsLeft <= 0) autoRefresh();
   }
   setInterval(tick, 1000);
 
-  /* ---- fetch updated data and re-render table ---- */
-  async function fetchAndRender(url = '/api/results', opts = {}) {
+  // ---- Fetch & render ----
+  async function fetchAndRender(url, opts = {}) {
     try {
       const resp = await fetch(url, opts);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -209,76 +336,186 @@
       renderAll(data);
       updateStatus(data);
     } catch (err) {
-      statusTextEl.innerHTML = '⚠️ Could not fetch update: ' + err.message;
+      if (statusTextEl) statusTextEl.innerHTML = '⚠️ Could not fetch update: ' + escapeHtml(err.message);
     }
   }
 
   function autoRefresh() {
     secondsLeft = REFRESH_INTERVAL;
-    progressFill.style.width = '0%';
+    if (progressFill) progressFill.style.width = '0%';
     fetchAndRender('/api/results');
   }
 
   function manualRefresh() {
-    refreshBtn.disabled = true;
-    refreshBtn.textContent = '↻ Refreshing…';
-    fetchAndRender('/api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      .finally(() => {
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = '↻ Refresh Now';
-        secondsLeft = REFRESH_INTERVAL;
-        progressFill.style.width = '0%';
-      });
+    if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '↻ Refreshing…'; }
+    fetchAndRender('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).finally(() => {
+      if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+      secondsLeft = REFRESH_INTERVAL;
+      if (progressFill) progressFill.style.width = '0%';
+    });
   }
 
-  /* ---- CSV export ---- */
-  function exportCSV() {
-    window.location.href = '/api/export/csv';
-  }
+  function exportCSV() { window.location.href = '/api/export/csv'; }
 
-  /* ---- render helpers ---- */
-  function formatColHeader(col) {
-    return col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  }
-
+  // ---- Status / header helpers ----
   function updateStatus(data) {
     const ts = data.last_updated || '–';
-    const st = data.status      || '–';
-    statusTextEl.innerHTML =
-      'Last updated: <strong>' + ts + '</strong> &nbsp;|&nbsp; Status: <strong>' + st + '</strong>';
+    const st = data.status || '–';
+    if (statusTextEl) {
+      statusTextEl.innerHTML =
+        'Last updated: <strong>' + escapeHtml(ts) + '</strong> &nbsp;|&nbsp; Status: <strong>' + escapeHtml(st) + '</strong>';
+    }
   }
 
+  function updateSeatOverview(tally) {
+    const total = tally.reduce((s, p) => s + (p.seats || 0), 0);
+    const el = document.getElementById('totalDeclared');
+    if (el) el.textContent = total;
+
+    const pct = TOTAL_SEATS > 0 ? ((total / TOTAL_SEATS) * 100).toFixed(1) : 0;
+    const pctEl = document.getElementById('declaredPct');
+    if (pctEl) pctEl.textContent = pct + '%';
+    const fillEl = document.getElementById('declaredFill');
+    if (fillEl) fillEl.style.width = pct + '%';
+
+    if (tally.length > 0) {
+      const top = tally[0];
+      const nameEl = document.getElementById('leadingPartyName');
+      if (nameEl) nameEl.textContent = top.party + ' (' + top.seats + ')';
+    }
+  }
+
+  // ---- Party tally rendering ----
+  function renderPartyTally(tally) {
+    if (!tally || tally.length === 0) return;
+
+    const section = document.getElementById('majoritySection');
+    if (section) section.style.display = '';
+
+    renderMajorityBar(tally);
+    renderPartyCards(tally);
+  }
+
+  function renderMajorityBar(tally) {
+    const bar = document.getElementById('majorityBar');
+    if (!bar) return;
+    const totalSeats = tally.reduce((s, p) => s + (p.seats || 0), 0);
+    if (totalSeats === 0) return;
+
+    let html = '';
+    tally.forEach(p => {
+      if (!p.seats) return;
+      const pct = (p.seats / TOTAL_SEATS * 100).toFixed(2);
+      const color = partyColor(p.party);
+      html += '<div class="mb-segment" style="width:' + pct + '%;background:' + color + ';" '
+            + 'title="' + escapeHtml(p.party) + ': ' + p.seats + ' seats"></div>';
+    });
+    bar.innerHTML = html;
+
+    // Position majority line
+    const line = document.getElementById('majorityLine');
+    if (line) {
+      const linePct = (MAJORITY / TOTAL_SEATS * 100).toFixed(2);
+      line.style.left = linePct + '%';
+    }
+  }
+
+  function renderPartyCards(tally) {
+    const grid = document.getElementById('partyGrid');
+    if (!grid) return;
+
+    let html = '';
+    tally.forEach(p => {
+      const color = partyColor(p.party);
+      const pct = MAJORITY > 0 ? Math.min(100, ((p.seats || 0) / MAJORITY * 100)).toFixed(1) : 0;
+      html += '<div class="party-card" style="--party-color:' + color + '">'
+            + '<div class="pc-header">'
+            + '<span class="pc-dot" style="background:' + color + '"></span>'
+            + '<span class="pc-name" title="' + escapeHtml(p.party) + '">' + escapeHtml(p.party) + '</span>'
+            + '</div>'
+            + '<div class="pc-seats">' + (p.seats || 0) + '</div>'
+            + '<div class="pc-breakdown">'
+            + '<span class="pc-won" title="Won">✓ ' + (p.won || 0) + '</span>'
+            + '<span class="pc-leading" title="Leading">↑ ' + (p.leading || 0) + '</span>'
+            + '</div>'
+            + '<div class="pc-bar-wrap"><div class="pc-bar" style="width:' + pct + '%;background:' + color + '"></div></div>'
+            + '</div>';
+    });
+    grid.innerHTML = html;
+  }
+
+  // ---- Full re-render after API refresh ----
   function renderAll(data) {
+    const tally = data.party_tally || [];
+    renderPartyTally(tally);
+    updateSeatOverview(tally);
+
     if (!data.results || data.results.length === 0) {
       tableWrapper.innerHTML =
-        '<div class="empty-state"><p>🔍 No results available yet. Fetching…</p></div>';
-      allRows = [];
-      filteredRows = [];
-      colHeaders = [];
-      const cs = document.getElementById('chartSection');
-      if (cs) cs.style.display = 'none';
+        '<div class="empty-state"><div class="empty-icon">🗳️</div><p>No results available yet. Fetching…</p></div>';
+      allRows = []; filteredRows = []; colHeaders = [];
       return;
     }
 
     colHeaders = Object.keys(data.results[0]);
     allRows = data.results.map(row => colHeaders.map(c => String(row[c] ?? '')));
-    // Apply existing filter then sort
+    buildPartyFilter(allRows, colHeaders);
     applyFilter(false);
-    buildChart(allRows, colHeaders);
   }
 
-  /* ---- search/filter ---- */
+  // ---- Filter / search ----
+  function buildPartyFilter(rows, headers) {
+    const partyIdx = headers.indexOf('party');
+    if (partyIdx < 0) return;
+    partyOptions = new Set(rows.map(r => r[partyIdx]).filter(Boolean));
+    const sel = document.getElementById('partyFilter');
+    if (!sel) return;
+    const current = sel.value;
+    // Remove old options except first
+    while (sel.options.length > 1) sel.remove(1);
+    Array.from(partyOptions).sort().forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      sel.appendChild(opt);
+    });
+    sel.value = current;
+  }
+
   function applyFilter(resetPage = true) {
     const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
-    filteredRows = q
-      ? allRows.filter(cells => cells.some(c => c.toLowerCase().includes(q)))
-      : allRows.slice();
+    const province = (document.getElementById('provinceFilter')?.value || '').toLowerCase();
+    const partyF = (document.getElementById('partyFilter')?.value || '').toLowerCase();
+    const statusF = (document.getElementById('statusFilter')?.value || '').toLowerCase();
+
+    const partyIdx = colHeaders.indexOf('party');
+    const statusIdx = colHeaders.indexOf('status');
+    const consIdx = colHeaders.findIndex(h => h === 'constituency');
+
+    filteredRows = allRows.filter(cells => {
+      if (q && !cells.some(c => c.toLowerCase().includes(q))) return false;
+      if (partyF && partyIdx >= 0 && cells[partyIdx].toLowerCase() !== partyF) return false;
+      if (statusF && statusIdx >= 0) {
+        const s = cells[statusIdx].toLowerCase();
+        if (statusF === 'won' && !s.includes('won') && !s.includes('elected') && !s.includes('निर्वाचित')) return false;
+        if (statusF === 'leading' && !s.includes('lead')) return false;
+      }
+      if (province && consIdx >= 0) {
+        // basic province matching — if user typed a province name match constituency text
+        if (!cells[consIdx].toLowerCase().includes(province.split(' ')[0])) return false;
+      }
+      return true;
+    });
+
     applySortToFiltered();
     if (resetPage) currentPage = 1;
     renderPage(currentPage);
   }
 
-  /* ---- sort (via event delegation – no inline onclick needed) ---- */
+  // ---- Sort ----
   document.addEventListener('click', function (e) {
     const th = e.target.closest('#resultsTable thead th.sortable');
     if (!th) return;
@@ -300,21 +537,14 @@
     const colIdx = colHeaders.indexOf(sortState.col);
     if (colIdx < 0) return;
     filteredRows.sort((a, b) => {
-      const va = a[colIdx] || '';
-      const vb = b[colIdx] || '';
-      const na = parseFloat(va.replace(COMMA_RE, ''));
-      const nb = parseFloat(vb.replace(COMMA_RE, ''));
-      let cmp;
-      if (!isNaN(na) && !isNaN(nb)) {
-        cmp = na - nb;
-      } else {
-        cmp = va.localeCompare(vb);
-      }
+      const va = a[colIdx] || '', vb = b[colIdx] || '';
+      const na = parseFloat(va.replace(COMMA_RE, '')), nb = parseFloat(vb.replace(COMMA_RE, ''));
+      const cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb);
       return sortState.asc ? cmp : -cmp;
     });
   }
 
-  /* ---- pagination ---- */
+  // ---- Pagination / table render ----
   function renderPage(page) {
     currentPage = page;
     const start = (page - 1) * PAGE_SIZE;
@@ -324,20 +554,33 @@
     html += '<th data-col="#" class="col-index">#</th>';
     colHeaders.forEach(col => {
       const icon = (sortState.col === col) ? (sortState.asc ? '▲' : '▼') : '⇅';
-      html += '<th data-col="' + escapeHtml(col) + '" class="sortable">';
-      html += escapeHtml(formatColHeader(col)) + ' <span class="sort-icon">' + icon + '</span></th>';
+      html += '<th data-col="' + escapeHtml(col) + '" class="sortable">'
+            + escapeHtml(formatColHeader(col))
+            + ' <span class="sort-icon">' + icon + '</span></th>';
     });
     html += '</tr></thead><tbody id="resultsBody">';
 
+    const partyIdx  = colHeaders.indexOf('party');
+    const statusIdx = colHeaders.indexOf('status');
+
     pageRows.forEach((cells, i) => {
-      const rowNum = start + i + 1;
-      html += '<tr><td>' + rowNum + '</td>';
-      cells.forEach(c => { html += '<td>' + escapeHtml(c) + '</td>'; });
+      html += '<tr><td class="col-index">' + (start + i + 1) + '</td>';
+      cells.forEach((c, ci) => {
+        if (ci === statusIdx) {
+          html += '<td>' + renderStatusBadge(c) + '</td>';
+        } else if (ci === partyIdx) {
+          const color = partyColor(c);
+          html += '<td><span class="party-tag" style="border-color:' + color + ';color:' + color + '">'
+                + escapeHtml(c) + '</span></td>';
+        } else {
+          html += '<td>' + escapeHtml(c) + '</td>';
+        }
+      });
       html += '</tr>';
     });
 
     if (pageRows.length === 0) {
-      html += '<tr><td colspan="' + (colHeaders.length + 1) + '" style="text-align:center;padding:2rem;color:var(--clr-muted)">No matching results.</td></tr>';
+      html += '<tr><td colspan="' + (colHeaders.length + 1) + '" class="empty-row">No matching results.</td></tr>';
     }
 
     html += '</tbody></table>';
@@ -345,87 +588,65 @@
     html += '<p class="row-count" id="rowCount"></p>';
     tableWrapper.innerHTML = html;
 
-    // Render pagination controls
-    const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
-    renderPagination(page, totalPages);
+    renderPagination(page, Math.ceil(filteredRows.length / PAGE_SIZE));
 
     const rc = document.getElementById('rowCount');
-    if (rc) {
-      rc.textContent = filteredRows.length === allRows.length
-        ? 'Showing ' + filteredRows.length + ' result(s)'
-        : 'Showing ' + filteredRows.length + ' of ' + allRows.length + ' result(s) (filtered)';
-    }
+    if (rc) rc.textContent = filteredRows.length === allRows.length
+      ? 'Showing ' + filteredRows.length + ' result(s)'
+      : 'Showing ' + filteredRows.length + ' of ' + allRows.length + ' result(s) (filtered)';
+  }
+
+  function renderStatusBadge(status) {
+    if (!status) return '–';
+    const s = status.toLowerCase();
+    let cls = 'badge-default';
+    if (s.includes('won') || s.includes('elected') || s.includes('निर्वाचित') || s.includes('विजयी')) cls = 'badge-won';
+    else if (s.includes('lead') || s.includes('अग्रणी')) cls = 'badge-leading';
+    return '<span class="status-badge ' + cls + '">' + escapeHtml(status) + '</span>';
+  }
+
+  function colorizePartyTags() {
+    document.querySelectorAll('.party-tag[data-party]').forEach(el => {
+      const color = partyColor(el.dataset.party);
+      el.style.borderColor = color;
+      el.style.color = color;
+    });
+  }
+
+  function colorizeStatusBadges() {
+    document.querySelectorAll('.status-badge').forEach(el => {
+      const s = el.textContent.toLowerCase();
+      if (s.includes('won') || s.includes('elected') || s.includes('निर्वाचित')) {
+        el.classList.add('badge-won');
+      } else if (s.includes('lead') || s.includes('अग्रणी')) {
+        el.classList.add('badge-leading');
+      } else {
+        el.classList.add('badge-default');
+      }
+    });
   }
 
   function renderPagination(page, totalPages) {
     const pgEl = document.getElementById('pagination');
     if (!pgEl || totalPages <= 1) return;
     let html = '';
-    html += '<button class="pg-btn" onclick="renderPage(' + (page - 1) + ')" '
-          + (page <= 1 ? 'disabled' : '') + '>‹ Prev</button>';
-    const start = Math.max(1, page - 2);
-    const end   = Math.min(totalPages, page + 2);
-    if (start > 1) html += '<button class="pg-btn" onclick="renderPage(1)">1</button>'
-                         + (start > 2 ? '<span class="pg-ellipsis">…</span>' : '');
-    for (let p = start; p <= end; p++) {
-      html += '<button class="pg-btn' + (p === page ? ' pg-active' : '') + '" onclick="renderPage(' + p + ')">' + p + '</button>';
-    }
-    if (end < totalPages) {
-      html += (end < totalPages - 1 ? '<span class="pg-ellipsis">…</span>' : '')
-            + '<button class="pg-btn" onclick="renderPage(' + totalPages + ')">' + totalPages + '</button>';
-    }
-    html += '<button class="pg-btn" onclick="renderPage(' + (page + 1) + ')" '
-          + (page >= totalPages ? 'disabled' : '') + '>Next ›</button>';
+    html += '<button class="pg-btn" onclick="renderPage(' + (page-1) + ')" ' + (page <= 1 ? 'disabled' : '') + '>‹ Prev</button>';
+    const s = Math.max(1, page-2), e = Math.min(totalPages, page+2);
+    if (s > 1) html += '<button class="pg-btn" onclick="renderPage(1)">1</button>' + (s > 2 ? '<span class="pg-ellipsis">…</span>' : '');
+    for (let p = s; p <= e; p++) html += '<button class="pg-btn' + (p===page?' pg-active':'') + '" onclick="renderPage('+p+')">'+p+'</button>';
+    if (e < totalPages) html += (e < totalPages-1 ? '<span class="pg-ellipsis">…</span>' : '') + '<button class="pg-btn" onclick="renderPage('+totalPages+')">'+totalPages+'</button>';
+    html += '<button class="pg-btn" onclick="renderPage(' + (page+1) + ')" ' + (page >= totalPages ? 'disabled' : '') + '>Next ›</button>';
     pgEl.innerHTML = html;
   }
 
-  /* ---- party chart ---- */
-  function buildChart(rows, headers) {
-    const partyIdx  = headers.findIndex(h => /party/i.test(h));
-    const votesIdx  = headers.findIndex(h => /votes?|seats?/i.test(h));
-    const section   = document.getElementById('chartSection');
-    const container = document.getElementById('chartContainer');
-    if (!section || !container || partyIdx < 0 || votesIdx < 0) {
-      if (section) section.style.display = 'none';
-      return;
-    }
-
-    const totals = {};
-    rows.forEach(cells => {
-      const party = cells[partyIdx] || 'Unknown';
-      const val   = parseFloat((cells[votesIdx] || '0').replace(COMMA_RE, ''));
-      if (!isNaN(val)) {
-        totals[party] = (totals[party] || 0) + val;
-      }
-    });
-
-    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    if (sorted.length === 0) { section.style.display = 'none'; return; }
-
-    const max = sorted[0][1];
-    let html = '';
-    sorted.forEach(([party, count]) => {
-      const pct = max > 0 ? (count / max * 100).toFixed(1) : 0;
-      html += '<div class="chart-row">'
-            + '<span class="chart-label" title="' + escapeHtml(party) + '">' + escapeHtml(party) + '</span>'
-            + '<div class="chart-bar-wrap">'
-            + '<div class="chart-bar" style="width:' + pct + '%"></div>'
-            + '</div>'
-            + '<span class="chart-value">' + count.toLocaleString() + '</span>'
-            + '</div>';
-    });
-    container.innerHTML = html;
-    section.style.display = '';
+  function formatColHeader(col) {
+    return col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
 
-  /* ---- security helper ---- */
   function escapeHtml(str) {
     return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 </script>
 

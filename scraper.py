@@ -39,6 +39,7 @@ USER_AGENT = (
 _lock = threading.Lock()
 _cache: dict[str, Any] = {
     "results": [],
+    "party_tally": [],
     "summary": {},
     "source_url": DEFAULT_SCRAPE_URL,
     "last_updated": None,
@@ -89,9 +90,11 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
         or _parse_results_list(soup)
     )
     summary = _parse_summary(soup)
+    party_tally = _aggregate_party_tally(results)
 
     with _lock:
         _cache["results"] = results
+        _cache["party_tally"] = party_tally
         _cache["summary"] = summary
         _cache["source_url"] = url
         _cache["last_updated"] = datetime.now().isoformat(timespec="seconds")
@@ -291,6 +294,69 @@ def _parse_summary(soup: BeautifulSoup) -> dict:
             if len(summary) >= 5:
                 break
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Party tally aggregation
+# ---------------------------------------------------------------------------
+
+# Status keywords that indicate a candidate has won a seat.
+_WON_KEYWORDS = frozenset([
+    "won", "win", "winner", "elected", "निर्वाचित", "विजयी",
+])
+# Status keywords that indicate a candidate is currently leading.
+_LEADING_KEYWORDS = frozenset([
+    "leading", "lead", "अग्रणी", "leading by",
+])
+
+
+def _aggregate_party_tally(results: list[dict]) -> list[dict]:
+    """
+    Aggregate seat-level results by party.
+
+    Returns a list of dicts sorted by total seats (won + leading) descending.
+    Each dict has: party, won, leading, seats (won+leading), total_votes.
+    """
+    tally: dict[str, dict] = {}
+    for row in results:
+        party = (
+            row.get("party")
+            or row.get("candidate_party")
+            or "Unknown"
+        ).strip()
+        if not party:
+            party = "Unknown"
+
+        votes_raw = row.get("votes") or row.get("votes_seats") or "0"
+        try:
+            votes = int(str(votes_raw).replace(",", "").strip())
+        except ValueError:
+            votes = 0
+
+        status_raw = (row.get("status") or "").lower().strip()
+
+        if party not in tally:
+            tally[party] = {
+                "party": party,
+                "won": 0,
+                "leading": 0,
+                "total_votes": 0,
+            }
+
+        tally[party]["total_votes"] += votes
+
+        if any(kw in status_raw for kw in _WON_KEYWORDS):
+            tally[party]["won"] += 1
+        elif any(kw in status_raw for kw in _LEADING_KEYWORDS):
+            tally[party]["leading"] += 1
+
+    result_list = []
+    for entry in tally.values():
+        entry["seats"] = entry["won"] + entry["leading"]
+        result_list.append(entry)
+
+    result_list.sort(key=lambda x: (x["seats"], x["total_votes"]), reverse=True)
+    return result_list
 
 
 # ---------------------------------------------------------------------------
