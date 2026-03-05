@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Election Results</title>
+  <title>Nepal Election Results</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
@@ -13,8 +13,8 @@
   <div class="header-inner">
     <div class="logo">🗳️</div>
     <div>
-      <h1>Live Election Results</h1>
-      <p class="subtitle">Real-time updates via web scraping</p>
+      <h1>Nepal Election Results</h1>
+      <p class="subtitle">Real-time updates via web scraping &mdash; Election Commission of Nepal</p>
     </div>
     <div class="live-badge" id="liveBadge">
       <span class="dot"></span> LIVE
@@ -143,7 +143,7 @@
 <!-- ===== Footer ===== -->
 <footer>
   <p>
-    Election Results Live Tracker &mdash; refreshes every {{ refresh_interval }} seconds.
+    Nepal Election Results Live Tracker &mdash; refreshes every {{ refresh_interval }} seconds.
     Data sourced from public election portals via web scraping.
   </p>
 </footer>
