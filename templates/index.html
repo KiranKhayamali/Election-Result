@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Election Results</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header>
+  <div class="header-inner">
+    <div class="logo">🗳️</div>
+    <div>
+      <h1>Live Election Results</h1>
+      <p class="subtitle">Real-time updates via web scraping</p>
+    </div>
+    <div class="live-badge" id="liveBadge">
+      <span class="dot"></span> LIVE
+    </div>
+  </div>
+</header>
+
+<!-- ===== Status bar ===== -->
+<div class="status-bar">
+  <div class="status-inner">
+    <span id="statusText">
+      {% if data.last_updated %}
+        Last updated: <strong>{{ data.last_updated }}</strong> &nbsp;|&nbsp;
+        Status: <strong>{{ data.status }}</strong>
+      {% else %}
+        Fetching data…
+      {% endif %}
+    </span>
+    <span class="source-link">
+      Source: <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_url }}</a>
+    </span>
+  </div>
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+</div>
+
+<!-- ===== Main content ===== -->
+<main>
+
+  <!-- Summary cards -->
+  {% if data.summary %}
+  <section class="summary-section">
+    <h2>Summary</h2>
+    <div class="card-grid">
+      {% for key, value in data.summary.items() %}
+      <div class="card">{{ value }}</div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Error notice -->
+  {% if data.error %}
+  <div class="alert alert-error">
+    ⚠️ <strong>Scraping error:</strong> {{ data.error }}
+    <br>Showing cached data (if any). The data will refresh automatically.
+  </div>
+  {% endif %}
+
+  <!-- Results table -->
+  <section class="results-section">
+    <div class="section-header">
+      <h2>Results</h2>
+      <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
+        ↻ Refresh Now
+      </button>
+    </div>
+
+    <div id="tableWrapper">
+      {% if data.results %}
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              {% for col in data.results[0].keys() %}
+              <th>{{ col | replace('_', ' ') | title }}</th>{# mirrors formatColHeader() in JS #}
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in data.results %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              {% for val in row.values() %}
+              <td>{{ val }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state">
+          <p>🔍 No results available yet.</p>
+          <p>The scraper is fetching data from
+             <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_url }}</a>.
+          </p>
+          <p>Results will appear automatically once data is retrieved.</p>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Countdown -->
+  <p class="countdown" id="countdownText">
+    Next auto-refresh in <strong id="countdown">{{ refresh_interval }}</strong> s
+  </p>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer>
+  <p>
+    Election Results Live Tracker &mdash; refreshes every {{ refresh_interval }} seconds.
+    Data sourced from public election portals via web scraping.
+  </p>
+</footer>
+
+<!-- ===== JavaScript ===== -->
+<script>
+  const REFRESH_INTERVAL = {{ refresh_interval }};
+  let secondsLeft = REFRESH_INTERVAL;
+  const progressFill  = document.getElementById('progressFill');
+  const countdownEl   = document.getElementById('countdown');
+  const statusTextEl  = document.getElementById('statusText');
+  const tableWrapper  = document.getElementById('tableWrapper');
+  const refreshBtn    = document.getElementById('refreshBtn');
+
+  /* ---- countdown timer ---- */
+  function tick() {
+    secondsLeft -= 1;
+    countdownEl.textContent = secondsLeft;
+    const pct = ((REFRESH_INTERVAL - secondsLeft) / REFRESH_INTERVAL) * 100;
+    progressFill.style.width = pct + '%';
+    if (secondsLeft <= 0) {
+      autoRefresh();
+    }
+  }
+  setInterval(tick, 1000);
+
+  /* ---- fetch updated data and re-render table ---- */
+  async function fetchAndRender(url = '/api/results', opts = {}) {
+    try {
+      const resp = await fetch(url, opts);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      renderTable(data);
+      updateStatus(data);
+    } catch (err) {
+      statusTextEl.innerHTML = '⚠️ Could not fetch update: ' + err.message;
+    }
+  }
+
+  function autoRefresh() {
+    secondsLeft = REFRESH_INTERVAL;
+    progressFill.style.width = '0%';
+    fetchAndRender('/api/results');
+  }
+
+  function manualRefresh() {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '↻ Refreshing…';
+    fetchAndRender('/api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .finally(() => {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '↻ Refresh Now';
+        secondsLeft = REFRESH_INTERVAL;
+        progressFill.style.width = '0%';
+      });
+  }
+
+  /* ---- render helpers ---- */
+  function formatColHeader(col) {
+    return col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  function updateStatus(data) {
+    const ts = data.last_updated || '–';
+    const st = data.status      || '–';
+    statusTextEl.innerHTML =
+      'Last updated: <strong>' + ts + '</strong> &nbsp;|&nbsp; Status: <strong>' + st + '</strong>';
+  }
+
+  function renderTable(data) {
+    if (!data.results || data.results.length === 0) {
+      tableWrapper.innerHTML =
+        '<div class="empty-state"><p>🔍 No results available yet. Fetching…</p></div>';
+      return;
+    }
+
+    const cols = Object.keys(data.results[0]);
+    let html = '<table id="resultsTable"><thead><tr><th>#</th>';
+    cols.forEach(c => {
+      html += '<th>' + formatColHeader(c) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    data.results.forEach((row, i) => {
+      html += '<tr><td>' + (i + 1) + '</td>';
+      cols.forEach(c => { html += '<td>' + (row[c] ?? '') + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    tableWrapper.innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
