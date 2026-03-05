@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Default target: Election Commission of India results portal.
+# Default target: Election Commission of Nepal results portal (2082 BS).
 # Override by setting SCRAPE_URL in the environment before starting the app.
-DEFAULT_SCRAPE_URL = "https://results.eci.gov.in/"
+DEFAULT_SCRAPE_URL = "https://result.election.gov.np/"
 
 REQUEST_TIMEOUT = 15  # seconds
 USER_AGENT = (
@@ -83,7 +83,11 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
 
     soup = BeautifulSoup(response.text, "lxml")
 
-    results = _parse_results_table(soup) or _parse_results_list(soup)
+    results = (
+        _parse_nepal_results(soup)
+        or _parse_results_table(soup)
+        or _parse_results_list(soup)
+    )
     summary = _parse_summary(soup)
 
     with _lock:
@@ -100,6 +104,113 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
 # ---------------------------------------------------------------------------
 # Private parsers
 # ---------------------------------------------------------------------------
+
+
+# Column synonyms used on the Nepal Election Commission portal.
+# Keys are canonical names; values are lists of header texts (lowercased)
+# that map to that key.
+_NEPAL_COL_SYNONYMS: dict[str, list[str]] = {
+    "constituency": [
+        "constituency",
+        "निर्वाचन क्षेत्र",
+        "district",
+        "जिल्ला",
+        "constituency no",
+        "निर्वाचन क्षेत्र नं.",
+    ],
+    "candidate": [
+        "candidate",
+        "candidate name",
+        "उम्मेदवारको नाम",
+        "उम्मेदवार",
+        "name",
+    ],
+    "party": [
+        "party",
+        "party name",
+        "दलको नाम",
+        "दल",
+        "political party",
+    ],
+    "votes": [
+        "votes",
+        "total votes",
+        "vote count",
+        "मत",
+        "कुल मत",
+        "votes received",
+        "प्राप्त मत",
+    ],
+    "status": [
+        "status",
+        "result",
+        "निर्वाचित",
+        "leading",
+        "winning",
+        "नतिजा",
+    ],
+}
+
+
+def _parse_nepal_results(soup: BeautifulSoup) -> list[dict]:
+    """
+    Parse election-result tables from the Nepal Election Commission portal
+    (result.election.gov.np).
+
+    The portal renders one or more ``<table>`` elements whose headers contain
+    Nepali or English column names recognised in ``_NEPAL_COL_SYNONYMS``.
+    Returns an empty list when none of the tables look like a results table.
+    """
+    rows: list[dict] = []
+
+    for table in soup.find_all("table"):
+        # Collect header cells from <th> or the first <tr>
+        header_cells = table.find_all("th")
+        if header_cells:
+            raw_headers = [h.get_text(strip=True) for h in header_cells]
+        else:
+            first_tr = table.find("tr")
+            if not first_tr:
+                continue
+            raw_headers = [td.get_text(strip=True) for td in first_tr.find_all("td")]
+
+        headers_lower = [h.lower() for h in raw_headers]
+
+        # Build a column-index → canonical-key map using Nepal synonyms
+        col_map: dict[int, str] = {}
+        for idx, header in enumerate(headers_lower):
+            for canonical, synonyms in _NEPAL_COL_SYNONYMS.items():
+                if header in synonyms:
+                    col_map[idx] = canonical
+                    break
+            else:
+                col_map[idx] = raw_headers[idx]
+
+        # Only treat the table as a results table when at least one
+        # recognised column (candidate, party, or votes) is present.
+        recognised = {v for v in col_map.values() if v in ("candidate", "party", "votes")}
+        if not recognised:
+            continue
+
+        data_trs = table.find_all("tr")[1:]
+        for tr in data_trs:
+            cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+            if not any(cells):
+                continue
+            row: dict[str, str] = {}
+            for idx, value in enumerate(cells):
+                if not value:
+                    continue
+                key = col_map.get(idx, f"col_{idx}")
+                row[key] = value
+            if row:
+                rows.append(row)
+
+        if rows:
+            logger.info("Nepal-specific parser found %d rows.", len(rows))
+            return rows
+
+    return rows
 
 
 def _parse_results_table(soup: BeautifulSoup) -> list[dict]:
