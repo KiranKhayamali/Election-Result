@@ -1,0 +1,288 @@
+/* ============================================================
+   Election Results – stylesheet
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --clr-bg:        #0f172a;
+  --clr-surface:   #1e293b;
+  --clr-border:    #334155;
+  --clr-accent:    #f97316;
+  --clr-accent2:   #3b82f6;
+  --clr-text:      #f1f5f9;
+  --clr-muted:     #94a3b8;
+  --clr-success:   #22c55e;
+  --clr-danger:    #ef4444;
+  --radius:        8px;
+  --shadow:        0 4px 24px rgba(0,0,0,.4);
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Header ---- */
+header {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-bottom: 2px solid var(--clr-accent);
+  padding: 1rem 1.5rem;
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.logo { font-size: 2.5rem; }
+
+header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--clr-accent);
+}
+
+.subtitle {
+  font-size: .85rem;
+  color: var(--clr-muted);
+}
+
+.live-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  background: rgba(239,68,68,.15);
+  border: 1px solid var(--clr-danger);
+  color: var(--clr-danger);
+  font-weight: 700;
+  font-size: .85rem;
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  background: var(--clr-danger);
+  border-radius: 50%;
+  animation: pulse 1.4s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(.8); }
+}
+
+/* ---- Status bar ---- */
+.status-bar {
+  background: var(--clr-surface);
+  border-bottom: 1px solid var(--clr-border);
+}
+
+.status-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .5rem 1.5rem;
+  flex-wrap: wrap;
+  gap: .5rem;
+  font-size: .85rem;
+  color: var(--clr-muted);
+}
+
+.status-inner strong { color: var(--clr-text); }
+
+.source-link a {
+  color: var(--clr-accent2);
+  text-decoration: none;
+}
+
+.source-link a:hover { text-decoration: underline; }
+
+.progress-bar {
+  height: 3px;
+  background: var(--clr-border);
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--clr-accent);
+  transition: width 1s linear;
+  width: 0%;
+}
+
+/* ---- Main ---- */
+main {
+  flex: 1;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 2rem;
+}
+
+/* ---- Summary cards ---- */
+.summary-section { margin-bottom: 1.5rem; }
+
+.summary-section h2,
+.results-section h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: .75rem;
+  color: var(--clr-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: .75rem;
+}
+
+.card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-left: 3px solid var(--clr-accent);
+  border-radius: var(--radius);
+  padding: .75rem 1rem;
+  font-size: .9rem;
+  box-shadow: var(--shadow);
+}
+
+/* ---- Alert ---- */
+.alert {
+  border-radius: var(--radius);
+  padding: .75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: .9rem;
+  line-height: 1.6;
+}
+
+.alert-error {
+  background: rgba(239,68,68,.1);
+  border: 1px solid var(--clr-danger);
+  color: #fca5a5;
+}
+
+/* ---- Section header (title + button) ---- */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .75rem;
+}
+
+.btn-refresh {
+  background: var(--clr-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: .45rem 1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .2s;
+}
+
+.btn-refresh:hover  { opacity: .85; }
+.btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Table ---- */
+#resultsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+  background: var(--clr-surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+#resultsTable thead {
+  background: #0f172a;
+}
+
+#resultsTable th {
+  padding: .65rem .9rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--clr-muted);
+  text-transform: uppercase;
+  font-size: .75rem;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--clr-border);
+  white-space: nowrap;
+}
+
+#resultsTable td {
+  padding: .6rem .9rem;
+  border-bottom: 1px solid var(--clr-border);
+  color: var(--clr-text);
+  vertical-align: top;
+}
+
+#resultsTable tbody tr:last-child td { border-bottom: none; }
+
+#resultsTable tbody tr:hover {
+  background: rgba(249,115,22,.06);
+}
+
+/* ---- Empty state ---- */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--clr-muted);
+  background: var(--clr-surface);
+  border-radius: var(--radius);
+  border: 1px dashed var(--clr-border);
+}
+
+.empty-state p { margin: .4rem 0; }
+
+.empty-state a {
+  color: var(--clr-accent2);
+  text-decoration: none;
+}
+
+/* ---- Countdown ---- */
+.countdown {
+  text-align: center;
+  color: var(--clr-muted);
+  font-size: .8rem;
+  margin-top: 1.25rem;
+}
+
+.countdown strong { color: var(--clr-accent); }
+
+/* ---- Footer ---- */
+footer {
+  background: var(--clr-surface);
+  border-top: 1px solid var(--clr-border);
+  text-align: center;
+  padding: 1rem;
+  font-size: .8rem;
+  color: var(--clr-muted);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 640px) {
+  header h1          { font-size: 1.3rem; }
+  .header-inner      { flex-wrap: wrap; }
+  .live-badge        { margin-left: 0; }
+  .section-header    { flex-direction: column; align-items: flex-start; gap: .5rem; }
+  #resultsTable      { font-size: .8rem; }
+  #resultsTable th,
+  #resultsTable td   { padding: .5rem .6rem; }
+}
