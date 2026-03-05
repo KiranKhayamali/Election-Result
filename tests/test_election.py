@@ -465,3 +465,188 @@ def test_admin_remove_result_requires_auth(client):
     resp = client.delete("/api/admin/results/0")
     assert resp.status_code == 302  # redirect to login
 
+
+# ---------------------------------------------------------------------------
+# News scraping – unit tests
+# ---------------------------------------------------------------------------
+
+SAMPLE_NEWS_HTML = """
+<html><body>
+  <article>
+    <h3><a href="/election-2082-result">Election 2082: CPN wins Kathmandu seat</a></h3>
+    <time>2024-11-15</time>
+  </article>
+  <article>
+    <h3><a href="/congress-leads">Nepali Congress leads in Lalitpur</a></h3>
+    <time>2024-11-15</time>
+  </article>
+  <article>
+    <h3><a href="/voter-turnout">High voter turnout recorded across Nepal</a></h3>
+    <time>2024-11-15</time>
+  </article>
+</body></html>
+"""
+
+FALLBACK_NEWS_HTML = """
+<html><body>
+  <a href="/news/1">Election 2082 results: CPN-UML wins majority in Province 1 according to officials</a>
+  <a href="/news/2">Nepali Congress candidate claims victory in Kathmandu-3 constituency</a>
+  <a href="/">Home</a>
+</body></html>
+"""
+
+
+def test_parse_news_articles_structured():
+    """_parse_news_articles extracts articles from <article> containers."""
+    soup = BeautifulSoup(SAMPLE_NEWS_HTML, "lxml")
+    articles = scraper._parse_news_articles(soup, "TestSource", "https://example.com")
+    assert len(articles) >= 2
+    sources = {a["source"] for a in articles}
+    assert sources == {"TestSource"}
+    for art in articles:
+        assert "title" in art
+        assert "link" in art
+        assert "source" in art
+        assert len(art["title"]) >= 15
+
+
+def test_parse_news_articles_fallback():
+    """_parse_news_articles falls back to scanning anchor texts."""
+    soup = BeautifulSoup(FALLBACK_NEWS_HTML, "lxml")
+    articles = scraper._parse_news_articles(soup, "Fallback", "https://example.com")
+    assert len(articles) >= 1
+    titles = [a["title"] for a in articles]
+    assert any("Election" in t or "Congress" in t for t in titles)
+
+
+def test_parse_news_articles_relative_links_made_absolute():
+    """Relative href values are resolved against the base URL."""
+    html = """<html><body>
+    <article><h3><a href="/article/live-election">Live election updates from across Nepal</a></h3></article>
+    <article><h3><a href="/article/live-election2">CPN-UML celebrates early lead in rural constituencies</a></h3></article>
+    <article><h3><a href="/article/live-election3">Voter turnout reaches 70 percent in hilly districts today</a></h3></article>
+    </body></html>"""
+    soup = BeautifulSoup(html, "lxml")
+    articles = scraper._parse_news_articles(soup, "Src", "https://news.example.com/")
+    for art in articles:
+        assert art["link"].startswith("https://news.example.com/"), art["link"]
+
+
+def test_parse_news_articles_skip_short_titles():
+    """Titles shorter than 15 characters are ignored."""
+    html = """<html><body>
+    <article><h3><a href="/x">Short</a></h3></article>
+    <article><h3><a href="/y">Nepal Election 2082: Full Results Now Available for All Constituencies</a></h3></article>
+    <article><h3><a href="/z">CPN-UML claims substantial victory across eastern Nepal regions</a></h3></article>
+    <article><h3><a href="/w">Vote count finalized for 165 of 275 constituencies in Nepal</a></h3></article>
+    </body></html>"""
+    soup = BeautifulSoup(html, "lxml")
+    articles = scraper._parse_news_articles(soup, "Src", "https://example.com/")
+    titles = [a["title"] for a in articles]
+    assert not any(t == "Short" for t in titles)
+
+
+def test_get_news_data_returns_dict():
+    """get_news_data() returns a dict with expected keys."""
+    data = scraper.get_news_data()
+    assert isinstance(data, dict)
+    assert "articles" in data
+    assert "sources" in data
+    assert "last_updated" in data
+
+
+def test_get_news_version_returns_int():
+    assert isinstance(scraper.get_news_version(), int)
+
+
+@patch("scraper.requests.get")
+def test_scrape_news_sources_success(mock_get):
+    """scrape_news_sources updates news cache on successful fetch."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.text = SAMPLE_NEWS_HTML
+    mock_get.return_value = mock_resp
+
+    before_version = scraper.get_news_version()
+    scraper.scrape_news_sources()
+    after_version = scraper.get_news_version()
+
+    assert after_version > before_version
+    data = scraper.get_news_data()
+    assert data["last_updated"] is not None
+    assert isinstance(data["articles"], list)
+    assert isinstance(data["sources"], list)
+    # At least some sources should have status reported
+    assert len(data["sources"]) == len(scraper.NEWS_SOURCES)
+
+
+@patch("scraper.requests.get")
+def test_scrape_news_sources_network_error(mock_get):
+    """scrape_news_sources records error but still updates cache."""
+    import requests as req
+    mock_get.side_effect = req.RequestException("timeout")
+
+    with scraper._news_lock:
+        scraper._news_cache["articles"] = []
+
+    scraper.scrape_news_sources()
+    data = scraper.get_news_data()
+
+    assert data["last_updated"] is not None
+    # All sources should show error status
+    for src in data["sources"]:
+        assert src["status"] == "error"
+        assert src["count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# /api/news endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_api_news_returns_json(client):
+    """GET /api/news returns 200 with expected JSON keys."""
+    resp = client.get("/api/news")
+    assert resp.status_code == 200
+    payload = json.loads(resp.data)
+    assert "articles" in payload
+    assert "sources" in payload
+    assert "last_updated" in payload
+
+
+def test_api_news_articles_are_list(client):
+    resp = client.get("/api/news")
+    payload = json.loads(resp.data)
+    assert isinstance(payload["articles"], list)
+
+
+def test_api_news_with_seeded_data(client):
+    """Seeded articles appear in /api/news response."""
+    with scraper._news_lock:
+        scraper._news_cache["articles"] = [
+            {"title": "CPN-UML wins Kathmandu", "link": "https://example.com/1",
+             "source": "Ekantipur", "timestamp": "2024-11-15"},
+        ]
+    resp = client.get("/api/news")
+    payload = json.loads(resp.data)
+    assert len(payload["articles"]) >= 1
+    assert payload["articles"][0]["source"] == "Ekantipur"
+
+
+# ---------------------------------------------------------------------------
+# NEWS_SOURCES configuration
+# ---------------------------------------------------------------------------
+
+
+def test_news_sources_have_required_keys():
+    """Every entry in NEWS_SOURCES has 'name' and 'url' keys."""
+    for src in scraper.NEWS_SOURCES:
+        assert "name" in src, f"Missing 'name' in {src}"
+        assert "url" in src, f"Missing 'url' in {src}"
+        assert src["url"].startswith("http"), f"URL must be absolute: {src['url']}"
+
+
+def test_news_sources_not_empty():
+    assert len(scraper.NEWS_SOURCES) >= 2
+
+

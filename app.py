@@ -43,9 +43,12 @@ from scraper import (
     DEFAULT_SCRAPE_URL,
     add_result,
     get_cached_data,
+    get_news_data,
+    get_news_version,
     get_version,
     remove_result,
     scrape_and_update,
+    scrape_news_sources,
 )
 
 # ---------------------------------------------------------------------------
@@ -70,8 +73,11 @@ if _secret_key == _DEFAULT_SECRET:
     )
 app.secret_key = _secret_key
 
-# How often (seconds) to automatically re-scrape
+# How often (seconds) to automatically re-scrape primary source
 REFRESH_INTERVAL = int(os.environ.get("REFRESH_INTERVAL", "60"))
+
+# How often (seconds) to scrape secondary news sources
+NEWS_REFRESH_INTERVAL = int(os.environ.get("NEWS_REFRESH_INTERVAL", "300"))
 
 # Target URL (can be overridden via environment variable)
 SCRAPE_URL = os.environ.get("SCRAPE_URL", DEFAULT_SCRAPE_URL)
@@ -95,6 +101,12 @@ scheduler.add_job(
     trigger="interval",
     seconds=REFRESH_INTERVAL,
     id="scrape_job",
+)
+scheduler.add_job(
+    scrape_news_sources,
+    trigger="interval",
+    seconds=NEWS_REFRESH_INTERVAL,
+    id="news_scrape_job",
 )
 
 
@@ -201,6 +213,41 @@ def api_stream():
     )
 
 
+@app.route("/api/news")
+def api_news():
+    """Return the latest news articles from secondary sources as JSON."""
+    return jsonify(get_news_data())
+
+
+@app.route("/api/stream/news")
+def api_stream_news():
+    """
+    Server-Sent Events endpoint for secondary news updates.
+
+    Pushes a version token whenever the news cache is refreshed so
+    the client can call ``/api/news`` immediately.
+    """
+
+    def generate():
+        last_version = get_news_version()
+        yield "data: {}\n\n".format(last_version)
+        while True:
+            time.sleep(5)
+            current = get_news_version()
+            if current != last_version:
+                last_version = current
+                yield "data: {}\n\n".format(current)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Routes – admin auth
 # ---------------------------------------------------------------------------
@@ -275,6 +322,7 @@ def admin_remove_result(idx):
 if __name__ == "__main__":
     # Do an initial scrape before starting the scheduler
     scrape_and_update(SCRAPE_URL)
+    scrape_news_sources()
     scheduler.start()
     logger.info(
         "Starting Flask app – scraping every %d seconds from %s",
