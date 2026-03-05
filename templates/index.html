@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nepal Election Results 2082</title>
+  <title>Nepal Election Results 2082 – Live Updates</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
@@ -14,7 +14,11 @@
     <div class="logo">🗳️</div>
     <div>
       <h1>Nepal Election Results 2082</h1>
-      <p class="subtitle">Real-time updates from Election Commission of Nepal</p>
+      <p class="subtitle">
+        Primary: <a href="https://result.election.gov.np/" target="_blank" rel="noopener noreferrer">result.election.gov.np</a>
+        &nbsp;·&nbsp;
+        Secondary: Ekantipur · Online Khabar · Setopati
+      </p>
     </div>
     <div class="header-right">
       <div class="live-badge" id="liveBadge">
@@ -50,109 +54,137 @@
   </div>
 </div>
 
-<!-- ===== Main content ===== -->
-<main>
-
-  <!-- Summary cards -->
-  {% if data.summary %}
-  <section class="summary-section">
-    <h2>Summary</h2>
-    <div class="card-grid">
-      {% for key, value in data.summary.items() %}
-      <div class="card">{{ value }}</div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <!-- Party chart -->
-  <section class="chart-section" id="chartSection" style="display:none;">
-    <h2>Party Seat Distribution</h2>
-    <div class="chart-container" id="chartContainer"></div>
-  </section>
-
-  <!-- Error notice -->
-  {% if data.error %}
-  <div class="alert alert-error">
-    ⚠️ <strong>Scraping error:</strong> {{ data.error }}
-    <br>Showing cached data (if any). The data will refresh automatically.
+<!-- ===== News ticker ===== -->
+<div class="news-ticker" id="newsTicker" aria-live="polite" aria-label="Latest news ticker">
+  <span class="ticker-label">📰 LATEST</span>
+  <div class="ticker-track" id="tickerTrack">
+    <span class="ticker-placeholder">Loading latest news…</span>
   </div>
-  {% endif %}
+</div>
 
-  <!-- Results table -->
-  <section class="results-section">
-    <div class="section-header">
-      <h2>Results</h2>
-      <div class="toolbar">
-        <input
-          type="search"
-          id="searchInput"
-          class="search-input"
-          placeholder="🔍 Search…"
-          oninput="applyFilter()"
-          aria-label="Search results"
-        />
-        <button class="btn-export" onclick="exportCSV()" title="Download results as CSV">
-          ⬇ Export CSV
-        </button>
-        <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
-          ↻ Refresh Now
-        </button>
-      </div>
-    </div>
+<!-- ===== Main content – two-column grid ===== -->
+<main>
+  <div class="main-grid">
 
-    <div id="tableWrapper">
-      {% if data.results %}
-        <table id="resultsTable">
-          <thead>
-            <tr>
-              <th data-col="#" class="col-index">#</th>
-              {% for col in data.results[0].keys() %}
-              <th data-col="{{ col | e }}" class="sortable">
-                {{ col | replace('_', ' ') | title }}
-                <span class="sort-icon">⇅</span>
-              </th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody id="resultsBody">
-            {% for row in data.results %}
-            <tr>
-              <td>{{ loop.index }}</td>
-              {% for val in row.values() %}
-              <td>{{ val }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <!-- Pagination -->
-        <div class="pagination" id="pagination"></div>
-        <p class="row-count" id="rowCount"></p>
-      {% else %}
-        <div class="empty-state">
-          <p>🔍 No results available yet.</p>
-          <p>The scraper is fetching data from
-             <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_url }}</a>.
-          </p>
-          <p>Results will appear automatically once data is retrieved.</p>
+    <!-- ====== LEFT column – election results ====== -->
+    <div class="results-column">
+
+      <!-- Summary cards -->
+      {% if data.summary %}
+      <section class="summary-section">
+        <h2>Summary</h2>
+        <div class="card-grid">
+          {% for key, value in data.summary.items() %}
+          <div class="card">{{ value }}</div>
+          {% endfor %}
         </div>
+      </section>
       {% endif %}
-    </div>
-  </section>
 
-  <!-- Countdown -->
-  <p class="countdown" id="countdownText">
-    Next auto-refresh in <strong id="countdown">{{ refresh_interval }}</strong> s
-  </p>
+      <!-- Party chart -->
+      <section class="chart-section" id="chartSection" style="display:none;">
+        <h2>Party Seat Distribution</h2>
+        <div class="chart-container" id="chartContainer"></div>
+      </section>
 
+      <!-- Error notice -->
+      {% if data.error %}
+      <div class="alert alert-error">
+        ⚠️ <strong>Primary source error:</strong> {{ data.error }}
+        <br>Showing cached data (if any). Will refresh automatically.
+      </div>
+      {% endif %}
+
+      <!-- Results table -->
+      <section class="results-section">
+        <div class="section-header">
+          <h2>Results</h2>
+          <div class="toolbar">
+            <input
+              type="search"
+              id="searchInput"
+              class="search-input"
+              placeholder="🔍 Search…"
+              oninput="applyFilter()"
+              aria-label="Search results"
+            />
+            <button class="btn-export" onclick="exportCSV()" title="Download results as CSV">
+              ⬇ Export CSV
+            </button>
+            <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
+              ↻ Refresh Now
+            </button>
+          </div>
+        </div>
+
+        <div id="tableWrapper">
+          {% if data.results %}
+            <table id="resultsTable">
+              <thead>
+                <tr>
+                  <th data-col="#" class="col-index">#</th>
+                  {% for col in data.results[0].keys() %}
+                  <th data-col="{{ col | e }}" class="sortable">
+                    {{ col | replace('_', ' ') | title }}
+                    <span class="sort-icon">⇅</span>
+                  </th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody id="resultsBody">
+                {% for row in data.results %}
+                <tr>
+                  <td>{{ loop.index }}</td>
+                  {% for val in row.values() %}
+                  <td>{{ val }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <!-- Pagination -->
+            <div class="pagination" id="pagination"></div>
+            <p class="row-count" id="rowCount"></p>
+          {% else %}
+            <div class="empty-state">
+              <p>🔍 No results available yet.</p>
+              <p>The scraper is fetching data from
+                 <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">{{ source_url }}</a>.
+              </p>
+              <p>Results will appear automatically once data is retrieved.</p>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- Countdown -->
+      <p class="countdown" id="countdownText">
+        Next auto-refresh in <strong id="countdown">{{ refresh_interval }}</strong> s
+      </p>
+
+    </div><!-- /results-column -->
+
+    <!-- ====== RIGHT column – live news feed ====== -->
+    <aside class="news-column">
+      <div class="news-feed-header">
+        <h2>📰 Live News Feed</h2>
+        <span class="news-source-list">Ekantipur · Online Khabar · Setopati</span>
+      </div>
+      <div id="newsFeedStatus" class="news-feed-status"></div>
+      <div id="newsFeedContainer" class="news-feed">
+        <div class="news-loading">Loading news…</div>
+      </div>
+    </aside>
+
+  </div><!-- /main-grid -->
 </main>
 
 <!-- ===== Footer ===== -->
 <footer>
   <p>
-    Election Results Live Tracker &mdash; refreshes every {{ refresh_interval }} seconds.
-    Data sourced from public election portals via web scraping.
+    Nepal Election Results Live Tracker &mdash; Primary source refreshes every {{ refresh_interval }} s.
+    Secondary news refreshes every 5 min.
+    Data sourced from public portals via web scraping.
   </p>
 </footer>
 
@@ -169,24 +201,19 @@
   // ---- All rows: each item is an array of *data* cells (no '#' column) ----
   let allRows = [];
   let filteredRows = [];
-  let colHeaders = [];          // data column names (no '#')
+  let colHeaders = [];
   let sortState = { col: null, asc: true };
   const PAGE_SIZE = 25;
   let currentPage = 1;
-  const COMMA_RE = /,/g;        // reuse regex instead of compiling per comparison
+  const COMMA_RE = /,/g;
 
   // Seed from server-rendered data
   (function seedRows() {
     const tbody = document.getElementById('resultsBody');
     if (!tbody) return;
-    // Read column names from <th data-col="..."> skipping the '#' column
     const ths = Array.from(document.querySelectorAll('#resultsTable thead th[data-col]'));
-    colHeaders = ths
-      .map(th => th.dataset.col)
-      .filter(c => c && c !== '#');
-
+    colHeaders = ths.map(th => th.dataset.col).filter(c => c && c !== '#');
     const trs = Array.from(tbody.querySelectorAll('tr'));
-    // Each <tr> has: <td>#</td><td>col0</td>... – skip the first cell (row number)
     allRows = trs.map(tr => {
       const cells = Array.from(tr.querySelectorAll('td'));
       return cells.slice(1).map(c => c.textContent.trim());
@@ -202,9 +229,7 @@
     countdownEl.textContent = secondsLeft;
     const pct = ((REFRESH_INTERVAL - secondsLeft) / REFRESH_INTERVAL) * 100;
     progressFill.style.width = pct + '%';
-    if (secondsLeft <= 0) {
-      autoRefresh();
-    }
+    if (secondsLeft <= 0) { autoRefresh(); }
   }
   setInterval(tick, 1000);
 
@@ -240,9 +265,7 @@
   }
 
   /* ---- CSV export ---- */
-  function exportCSV() {
-    window.location.href = '/api/export/csv';
-  }
+  function exportCSV() { window.location.href = '/api/export/csv'; }
 
   /* ---- render helpers ---- */
   function formatColHeader(col) {
@@ -260,17 +283,13 @@
     if (!data.results || data.results.length === 0) {
       tableWrapper.innerHTML =
         '<div class="empty-state"><p>🔍 No results available yet. Fetching…</p></div>';
-      allRows = [];
-      filteredRows = [];
-      colHeaders = [];
+      allRows = []; filteredRows = []; colHeaders = [];
       const cs = document.getElementById('chartSection');
       if (cs) cs.style.display = 'none';
       return;
     }
-
     colHeaders = Object.keys(data.results[0]);
     allRows = data.results.map(row => colHeaders.map(c => String(row[c] ?? '')));
-    // Apply existing filter then sort
     applyFilter(false);
     buildChart(allRows, colHeaders);
   }
@@ -286,18 +305,13 @@
     renderPage(currentPage);
   }
 
-  /* ---- sort (via event delegation – no inline onclick needed) ---- */
+  /* ---- sort ---- */
   document.addEventListener('click', function (e) {
     const th = e.target.closest('#resultsTable thead th.sortable');
     if (!th) return;
     const col = th.dataset.col;
     if (!col) return;
-    if (sortState.col === col) {
-      sortState.asc = !sortState.asc;
-    } else {
-      sortState.col = col;
-      sortState.asc = true;
-    }
+    sortState.col === col ? (sortState.asc = !sortState.asc) : (sortState.col = col, sortState.asc = true);
     applySortToFiltered();
     currentPage = 1;
     renderPage(1);
@@ -308,16 +322,9 @@
     const colIdx = colHeaders.indexOf(sortState.col);
     if (colIdx < 0) return;
     filteredRows.sort((a, b) => {
-      const va = a[colIdx] || '';
-      const vb = b[colIdx] || '';
-      const na = parseFloat(va.replace(COMMA_RE, ''));
-      const nb = parseFloat(vb.replace(COMMA_RE, ''));
-      let cmp;
-      if (!isNaN(na) && !isNaN(nb)) {
-        cmp = na - nb;
-      } else {
-        cmp = va.localeCompare(vb);
-      }
+      const va = a[colIdx] || '', vb = b[colIdx] || '';
+      const na = parseFloat(va.replace(COMMA_RE, '')), nb = parseFloat(vb.replace(COMMA_RE, ''));
+      let cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb);
       return sortState.asc ? cmp : -cmp;
     });
   }
@@ -332,31 +339,25 @@
     html += '<th data-col="#" class="col-index">#</th>';
     colHeaders.forEach(col => {
       const icon = (sortState.col === col) ? (sortState.asc ? '▲' : '▼') : '⇅';
-      html += '<th data-col="' + escapeHtml(col) + '" class="sortable">';
-      html += escapeHtml(formatColHeader(col)) + ' <span class="sort-icon">' + icon + '</span></th>';
+      html += '<th data-col="' + escapeHtml(col) + '" class="sortable">'
+            + escapeHtml(formatColHeader(col)) + ' <span class="sort-icon">' + icon + '</span></th>';
     });
     html += '</tr></thead><tbody id="resultsBody">';
-
     pageRows.forEach((cells, i) => {
-      const rowNum = start + i + 1;
-      html += '<tr><td>' + rowNum + '</td>';
+      html += '<tr><td>' + (start + i + 1) + '</td>';
       cells.forEach(c => { html += '<td>' + escapeHtml(c) + '</td>'; });
       html += '</tr>';
     });
-
     if (pageRows.length === 0) {
       html += '<tr><td colspan="' + (colHeaders.length + 1) + '" style="text-align:center;padding:2rem;color:var(--clr-muted)">No matching results.</td></tr>';
     }
-
     html += '</tbody></table>';
     html += '<div class="pagination" id="pagination"></div>';
     html += '<p class="row-count" id="rowCount"></p>';
     tableWrapper.innerHTML = html;
 
-    // Render pagination controls
     const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
     renderPagination(page, totalPages);
-
     const rc = document.getElementById('rowCount');
     if (rc) {
       rc.textContent = filteredRows.length === allRows.length
@@ -368,22 +369,12 @@
   function renderPagination(page, totalPages) {
     const pgEl = document.getElementById('pagination');
     if (!pgEl || totalPages <= 1) return;
-    let html = '';
-    html += '<button class="pg-btn" onclick="renderPage(' + (page - 1) + ')" '
-          + (page <= 1 ? 'disabled' : '') + '>‹ Prev</button>';
-    const start = Math.max(1, page - 2);
-    const end   = Math.min(totalPages, page + 2);
-    if (start > 1) html += '<button class="pg-btn" onclick="renderPage(1)">1</button>'
-                         + (start > 2 ? '<span class="pg-ellipsis">…</span>' : '');
-    for (let p = start; p <= end; p++) {
-      html += '<button class="pg-btn' + (p === page ? ' pg-active' : '') + '" onclick="renderPage(' + p + ')">' + p + '</button>';
-    }
-    if (end < totalPages) {
-      html += (end < totalPages - 1 ? '<span class="pg-ellipsis">…</span>' : '')
-            + '<button class="pg-btn" onclick="renderPage(' + totalPages + ')">' + totalPages + '</button>';
-    }
-    html += '<button class="pg-btn" onclick="renderPage(' + (page + 1) + ')" '
-          + (page >= totalPages ? 'disabled' : '') + '>Next ›</button>';
+    let html = '<button class="pg-btn" onclick="renderPage(' + (page-1) + ')" ' + (page<=1?'disabled':'') + '>‹ Prev</button>';
+    const s = Math.max(1, page-2), e = Math.min(totalPages, page+2);
+    if (s > 1) html += '<button class="pg-btn" onclick="renderPage(1)">1</button>' + (s>2?'<span class="pg-ellipsis">…</span>':'');
+    for (let p=s; p<=e; p++) html += '<button class="pg-btn' + (p===page?' pg-active':'') + '" onclick="renderPage('+p+')">'+p+'</button>';
+    if (e < totalPages) html += (e<totalPages-1?'<span class="pg-ellipsis">…</span>':'') + '<button class="pg-btn" onclick="renderPage('+totalPages+')">'+totalPages+'</button>';
+    html += '<button class="pg-btn" onclick="renderPage(' + (page+1) + ')" ' + (page>=totalPages?'disabled':'') + '>Next ›</button>';
     pgEl.innerHTML = html;
   }
 
@@ -397,30 +388,22 @@
       if (section) section.style.display = 'none';
       return;
     }
-
     const totals = {};
     rows.forEach(cells => {
       const party = cells[partyIdx] || 'Unknown';
-      const val   = parseFloat((cells[votesIdx] || '0').replace(COMMA_RE, ''));
-      if (!isNaN(val)) {
-        totals[party] = (totals[party] || 0) + val;
-      }
+      const val = parseFloat((cells[votesIdx] || '0').replace(COMMA_RE, ''));
+      if (!isNaN(val)) totals[party] = (totals[party] || 0) + val;
     });
-
-    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,10);
     if (sorted.length === 0) { section.style.display = 'none'; return; }
-
     const max = sorted[0][1];
     let html = '';
     sorted.forEach(([party, count]) => {
       const pct = max > 0 ? (count / max * 100).toFixed(1) : 0;
       html += '<div class="chart-row">'
-            + '<span class="chart-label" title="' + escapeHtml(party) + '">' + escapeHtml(party) + '</span>'
-            + '<div class="chart-bar-wrap">'
-            + '<div class="chart-bar" style="width:' + pct + '%"></div>'
-            + '</div>'
-            + '<span class="chart-value">' + count.toLocaleString() + '</span>'
-            + '</div>';
+            + '<span class="chart-label" title="'+escapeHtml(party)+'">'+escapeHtml(party)+'</span>'
+            + '<div class="chart-bar-wrap"><div class="chart-bar" style="width:'+pct+'%"></div></div>'
+            + '<span class="chart-value">'+count.toLocaleString()+'</span></div>';
     });
     container.innerHTML = html;
     section.style.display = '';
@@ -429,27 +412,87 @@
   /* ---- security helper ---- */
   function escapeHtml(str) {
     return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
-  /* ---- Server-Sent Events – instant live updates ---- */
+  /* ---- SSE – primary results ---- */
   (function connectSSE() {
-    if (!window.EventSource) return; // browser doesn't support SSE
+    if (!window.EventSource) return;
     const es = new EventSource('/api/stream');
-    es.onmessage = function (e) {
-      // A new version was pushed – fetch the latest results immediately.
-      fetchAndRender('/api/results');
-    };
-    es.onerror = function () {
-      // On error the browser will automatically try to reconnect.
-      // No additional action needed; the polling fallback still runs.
-    };
+    es.onmessage = function () { fetchAndRender('/api/results'); };
+    es.onerror = function () { /* browser auto-reconnects */ };
+  })();
+
+  /* ==================================================================
+     News feed (secondary sources)
+  ================================================================== */
+
+  const newsFeedContainer = document.getElementById('newsFeedContainer');
+  const newsFeedStatus    = document.getElementById('newsFeedStatus');
+  const tickerTrack       = document.getElementById('tickerTrack');
+
+  async function fetchNews() {
+    try {
+      const resp = await fetch('/api/news');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      renderNewsFeed(data);
+      updateTicker(data.articles || []);
+      if (data.last_updated) {
+        newsFeedStatus.textContent = 'News updated: ' + data.last_updated;
+      }
+    } catch (err) {
+      newsFeedStatus.textContent = '⚠️ News unavailable: ' + err.message;
+    }
+  }
+
+  function renderNewsFeed(data) {
+    const articles = data.articles || [];
+    if (articles.length === 0) {
+      newsFeedContainer.innerHTML =
+        '<div class="news-empty">No news articles available. ' +
+        'Secondary sources will be polled shortly.</div>';
+      return;
+    }
+    let html = '';
+    articles.forEach(art => {
+      html += '<a class="news-card" href="' + escapeHtml(art.link) + '" '
+            + 'target="_blank" rel="noopener noreferrer">'
+            + '<div class="news-card-source">'
+            + '<span class="news-source-badge">' + escapeHtml(art.source) + '</span>'
+            + (art.timestamp ? '<span class="news-timestamp">' + escapeHtml(art.timestamp) + '</span>' : '')
+            + '</div>'
+            + '<div class="news-card-title">' + escapeHtml(art.title) + '</div>'
+            + '</a>';
+    });
+    newsFeedContainer.innerHTML = html;
+  }
+
+  function updateTicker(articles) {
+    if (!articles.length) return;
+    const items = articles.slice(0, 15);
+    const text = items.map(a =>
+      '<span class="ticker-item">'
+      + '<span class="ticker-source">[' + escapeHtml(a.source) + ']</span> '
+      + escapeHtml(a.title)
+      + '</span>'
+    ).join('<span class="ticker-sep">◆</span>');
+    tickerTrack.innerHTML = text;
+  }
+
+  /* Fetch news on page load */
+  fetchNews();
+
+  /* SSE – news updates */
+  (function connectNewsSSE() {
+    if (!window.EventSource) return;
+    const es = new EventSource('/api/stream/news');
+    es.onmessage = function () { fetchNews(); };
+    es.onerror = function () { /* browser auto-reconnects */ };
   })();
 </script>
 
 </body>
 </html>
+

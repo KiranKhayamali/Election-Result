@@ -5,6 +5,11 @@ Scrapes live election results from configurable sources using
 BeautifulSoup and requests.  Falls back to cached data when the
 remote source is unavailable so the web app always has something
 to display.
+
+Two-tier data source strategy
+-------------------------------
+Primary  – Election Commission of Nepal portal (result.election.gov.np)
+Secondary – Nepali news outlets (Ekantipur, Online Khabar, Setopati)
 """
 
 import logging
@@ -12,6 +17,7 @@ import re
 import threading
 from datetime import datetime
 from typing import Any
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,10 +33,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_SCRAPE_URL = "https://result.election.gov.np/"
 
 REQUEST_TIMEOUT = 15  # seconds
+NEWS_REQUEST_TIMEOUT = 10  # seconds – shorter for secondary sources
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+# ---------------------------------------------------------------------------
+# Secondary news sources (Nepali online outlets)
+# ---------------------------------------------------------------------------
+
+NEWS_SOURCES: list[dict] = [
+    {
+        "name": "Ekantipur",
+        "url": "https://ekantipur.com/",
+    },
+    {
+        "name": "Online Khabar",
+        "url": "https://www.onlinekhabar.com/",
+    },
+    {
+        "name": "Setopati",
+        "url": "https://www.setopati.com/",
+    },
+]
 
 # ---------------------------------------------------------------------------
 # Shared state (protected by a lock so Flask threads read safely)
@@ -49,6 +75,19 @@ _cache: dict[str, Any] = {
 # that SSE listeners can detect updates without comparing full payloads.
 _version: int = 0
 
+# ---------------------------------------------------------------------------
+# News cache (secondary sources)
+# ---------------------------------------------------------------------------
+
+_news_lock = threading.Lock()
+_news_cache: dict[str, Any] = {
+    "articles": [],
+    "sources": [],
+    "last_updated": None,
+    "error": None,
+}
+_news_version: int = 0
+
 
 # ---------------------------------------------------------------------------
 # Public helpers
@@ -65,6 +104,18 @@ def get_version() -> int:
     """Return the current data version counter."""
     with _lock:
         return _version
+
+
+def get_news_data() -> dict[str, Any]:
+    """Return a snapshot of the most recently scraped news articles."""
+    with _news_lock:
+        return dict(_news_cache)
+
+
+def get_news_version() -> int:
+    """Return the current news data version counter."""
+    with _news_lock:
+        return _news_version
 
 
 def add_result(row: dict) -> None:
@@ -139,8 +190,161 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Private parsers
+# Secondary news-source scraping
 # ---------------------------------------------------------------------------
+
+# Article container selectors tried in order
+_ARTICLE_SELECTORS = [
+    "article",
+    ".article",
+    ".news-item",
+    ".post",
+    ".story",
+    ".item",
+    "[class*='article']",
+    "[class*='news']",
+    "[class*='story']",
+]
+
+# Phrases that indicate navigation / UI links rather than news headlines
+_SKIP_PHRASES = frozenset([
+    "home", "about", "contact", "login", "register", "subscribe",
+    "advertisement", "cookie", "privacy", "terms", "sitemap",
+])
+
+
+def scrape_news_sources() -> None:
+    """
+    Fetch the latest headlines from secondary Nepali news outlets.
+
+    Polls each source in ``NEWS_SOURCES``, parses article titles and links,
+    and stores the aggregated list in ``_news_cache``.
+    """
+    global _news_version
+    logger.info("Scraping secondary news sources…")
+    all_articles: list[dict] = []
+    source_statuses: list[dict] = []
+    errors: list[str] = []
+
+    for source in NEWS_SOURCES:
+        try:
+            articles = _scrape_single_news_source(source)
+            all_articles.extend(articles)
+            source_statuses.append({
+                "name": source["name"],
+                "url": source["url"],
+                "status": "ok",
+                "count": len(articles),
+            })
+        except Exception as exc:  # noqa: BLE001 – intentional broad catch
+            logger.warning("News scrape failed for %s: %s", source["name"], exc)
+            errors.append(f"{source['name']}: {exc}")
+            source_statuses.append({
+                "name": source["name"],
+                "url": source["url"],
+                "status": "error",
+                "count": 0,
+            })
+
+    with _news_lock:
+        _news_cache["articles"] = all_articles[:60]
+        _news_cache["sources"] = source_statuses
+        _news_cache["last_updated"] = datetime.now().isoformat(timespec="seconds")
+        _news_cache["error"] = "; ".join(errors) if errors else None
+        _news_version += 1
+
+    logger.info(
+        "News cache updated: %d articles from %d sources",
+        len(all_articles),
+        len(NEWS_SOURCES),
+    )
+
+
+def _scrape_single_news_source(source: dict) -> list[dict]:
+    """Fetch and parse articles from one news source entry.
+
+    Raises ``requests.RequestException`` on network failure so that
+    ``scrape_news_sources`` can record the error status for that source.
+    """
+    hdrs = {"User-Agent": USER_AGENT, "Accept-Language": "ne,en;q=0.9"}
+    resp = requests.get(source["url"], headers=hdrs, timeout=NEWS_REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "lxml")
+    return _parse_news_articles(soup, source["name"], source["url"])
+
+
+# Minimum character length for anchor-tag text in the fallback scanner.
+# 35 chars is long enough to exclude navigation labels (Home, Contact …)
+# while still capturing most one-line news headlines.
+_FALLBACK_ANCHOR_MIN_LEN = 35
+
+
+def _parse_news_articles(
+    soup: BeautifulSoup, source_name: str, base_url: str
+) -> list[dict]:
+    """
+    Extract article titles and links from a parsed HTML page.
+
+    Tries structured article containers first; falls back to scanning all
+    anchor tags for substantial headline text.
+    """
+    articles: list[dict] = []
+    seen: set[str] = set()
+
+    def _make_absolute(link: str) -> str:
+        """Resolve *link* against *base_url*, returning an absolute URL."""
+        if link.startswith("http"):
+            return link
+        return urljoin(base_url, link)
+
+    def _add(title: str, link: str, timestamp: str = "") -> None:
+        norm = title.lower().strip()
+        if norm in seen or len(title) < 15:
+            return
+        if any(skip in norm for skip in _SKIP_PHRASES):
+            return
+        seen.add(norm)
+        articles.append({
+            "title": title[:140],
+            "link": _make_absolute(link),
+            "source": source_name,
+            "timestamp": timestamp,
+        })
+
+    # Try structured selectors
+    for selector in _ARTICLE_SELECTORS:
+        items = soup.select(selector)
+        if len(items) < 3:
+            continue
+        for item in items[:25]:
+            heading = item.find(["h1", "h2", "h3", "h4"])
+            title = heading.get_text(strip=True) if heading else ""
+            if not title:
+                a_tag = item.find("a", href=True)
+                title = a_tag.get_text(strip=True) if a_tag else ""
+            if not title:
+                continue
+            a_tag = item.find("a", href=True)
+            link = a_tag["href"] if a_tag else base_url
+            time_tag = item.find("time")
+            ts = time_tag.get_text(strip=True) if time_tag else ""
+            _add(title, link, ts)
+        if articles:
+            break
+
+    # Fallback: scan significant anchor texts
+    if not articles:
+        for a in soup.find_all("a", href=True):
+            text = a.get_text(strip=True)
+            if len(text) > _FALLBACK_ANCHOR_MIN_LEN:
+                _add(text, a["href"])
+            if len(articles) >= 20:
+                break
+
+    return articles[:20]
+
+
+
 
 
 # Column synonyms used on the Nepal Election Commission portal.
