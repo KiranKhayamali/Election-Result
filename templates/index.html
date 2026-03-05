@@ -57,6 +57,12 @@
   </section>
   {% endif %}
 
+  <!-- Party chart -->
+  <section class="chart-section" id="chartSection" style="display:none;">
+    <h2>Party Seat Distribution</h2>
+    <div class="chart-container" id="chartContainer"></div>
+  </section>
+
   <!-- Error notice -->
   {% if data.error %}
   <div class="alert alert-error">
@@ -69,9 +75,22 @@
   <section class="results-section">
     <div class="section-header">
       <h2>Results</h2>
-      <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
-        ↻ Refresh Now
-      </button>
+      <div class="toolbar">
+        <input
+          type="search"
+          id="searchInput"
+          class="search-input"
+          placeholder="🔍 Search…"
+          oninput="applyFilter()"
+          aria-label="Search results"
+        />
+        <button class="btn-export" onclick="exportCSV()" title="Download results as CSV">
+          ⬇ Export CSV
+        </button>
+        <button class="btn-refresh" id="refreshBtn" onclick="manualRefresh()">
+          ↻ Refresh Now
+        </button>
+      </div>
     </div>
 
     <div id="tableWrapper">
@@ -79,13 +98,16 @@
         <table id="resultsTable">
           <thead>
             <tr>
-              <th>#</th>
+              <th data-col="#" class="col-index">#</th>
               {% for col in data.results[0].keys() %}
-              <th>{{ col | replace('_', ' ') | title }}</th>{# mirrors formatColHeader() in JS #}
+              <th data-col="{{ col | e }}" class="sortable">
+                {{ col | replace('_', ' ') | title }}
+                <span class="sort-icon">⇅</span>
+              </th>
               {% endfor %}
             </tr>
           </thead>
-          <tbody>
+          <tbody id="resultsBody">
             {% for row in data.results %}
             <tr>
               <td>{{ loop.index }}</td>
@@ -96,6 +118,9 @@
             {% endfor %}
           </tbody>
         </table>
+        <!-- Pagination -->
+        <div class="pagination" id="pagination"></div>
+        <p class="row-count" id="rowCount"></p>
       {% else %}
         <div class="empty-state">
           <p>🔍 No results available yet.</p>
@@ -133,6 +158,36 @@
   const tableWrapper  = document.getElementById('tableWrapper');
   const refreshBtn    = document.getElementById('refreshBtn');
 
+  // ---- All rows: each item is an array of *data* cells (no '#' column) ----
+  let allRows = [];
+  let filteredRows = [];
+  let colHeaders = [];          // data column names (no '#')
+  let sortState = { col: null, asc: true };
+  const PAGE_SIZE = 25;
+  let currentPage = 1;
+  const COMMA_RE = /,/g;        // reuse regex instead of compiling per comparison
+
+  // Seed from server-rendered data
+  (function seedRows() {
+    const tbody = document.getElementById('resultsBody');
+    if (!tbody) return;
+    // Read column names from <th data-col="..."> skipping the '#' column
+    const ths = Array.from(document.querySelectorAll('#resultsTable thead th[data-col]'));
+    colHeaders = ths
+      .map(th => th.dataset.col)
+      .filter(c => c && c !== '#');
+
+    const trs = Array.from(tbody.querySelectorAll('tr'));
+    // Each <tr> has: <td>#</td><td>col0</td>... – skip the first cell (row number)
+    allRows = trs.map(tr => {
+      const cells = Array.from(tr.querySelectorAll('td'));
+      return cells.slice(1).map(c => c.textContent.trim());
+    });
+    filteredRows = allRows.slice();
+    renderPage(1);
+    buildChart(allRows, colHeaders);
+  })();
+
   /* ---- countdown timer ---- */
   function tick() {
     secondsLeft -= 1;
@@ -151,7 +206,7 @@
       const resp = await fetch(url, opts);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
-      renderTable(data);
+      renderAll(data);
       updateStatus(data);
     } catch (err) {
       statusTextEl.innerHTML = '⚠️ Could not fetch update: ' + err.message;
@@ -176,6 +231,11 @@
       });
   }
 
+  /* ---- CSV export ---- */
+  function exportCSV() {
+    window.location.href = '/api/export/csv';
+  }
+
   /* ---- render helpers ---- */
   function formatColHeader(col) {
     return col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -188,27 +248,184 @@
       'Last updated: <strong>' + ts + '</strong> &nbsp;|&nbsp; Status: <strong>' + st + '</strong>';
   }
 
-  function renderTable(data) {
+  function renderAll(data) {
     if (!data.results || data.results.length === 0) {
       tableWrapper.innerHTML =
         '<div class="empty-state"><p>🔍 No results available yet. Fetching…</p></div>';
+      allRows = [];
+      filteredRows = [];
+      colHeaders = [];
+      const cs = document.getElementById('chartSection');
+      if (cs) cs.style.display = 'none';
       return;
     }
 
-    const cols = Object.keys(data.results[0]);
-    let html = '<table id="resultsTable"><thead><tr><th>#</th>';
-    cols.forEach(c => {
-      html += '<th>' + formatColHeader(c) + '</th>';
-    });
-    html += '</tr></thead><tbody>';
+    colHeaders = Object.keys(data.results[0]);
+    allRows = data.results.map(row => colHeaders.map(c => String(row[c] ?? '')));
+    // Apply existing filter then sort
+    applyFilter(false);
+    buildChart(allRows, colHeaders);
+  }
 
-    data.results.forEach((row, i) => {
-      html += '<tr><td>' + (i + 1) + '</td>';
-      cols.forEach(c => { html += '<td>' + (row[c] ?? '') + '</td>'; });
+  /* ---- search/filter ---- */
+  function applyFilter(resetPage = true) {
+    const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    filteredRows = q
+      ? allRows.filter(cells => cells.some(c => c.toLowerCase().includes(q)))
+      : allRows.slice();
+    applySortToFiltered();
+    if (resetPage) currentPage = 1;
+    renderPage(currentPage);
+  }
+
+  /* ---- sort (via event delegation – no inline onclick needed) ---- */
+  document.addEventListener('click', function (e) {
+    const th = e.target.closest('#resultsTable thead th.sortable');
+    if (!th) return;
+    const col = th.dataset.col;
+    if (!col) return;
+    if (sortState.col === col) {
+      sortState.asc = !sortState.asc;
+    } else {
+      sortState.col = col;
+      sortState.asc = true;
+    }
+    applySortToFiltered();
+    currentPage = 1;
+    renderPage(1);
+  });
+
+  function applySortToFiltered() {
+    if (!sortState.col) return;
+    const colIdx = colHeaders.indexOf(sortState.col);
+    if (colIdx < 0) return;
+    filteredRows.sort((a, b) => {
+      const va = a[colIdx] || '';
+      const vb = b[colIdx] || '';
+      const na = parseFloat(va.replace(COMMA_RE, ''));
+      const nb = parseFloat(vb.replace(COMMA_RE, ''));
+      let cmp;
+      if (!isNaN(na) && !isNaN(nb)) {
+        cmp = na - nb;
+      } else {
+        cmp = va.localeCompare(vb);
+      }
+      return sortState.asc ? cmp : -cmp;
+    });
+  }
+
+  /* ---- pagination ---- */
+  function renderPage(page) {
+    currentPage = page;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageRows = filteredRows.slice(start, start + PAGE_SIZE);
+
+    let html = '<table id="resultsTable"><thead><tr>';
+    html += '<th data-col="#" class="col-index">#</th>';
+    colHeaders.forEach(col => {
+      const icon = (sortState.col === col) ? (sortState.asc ? '▲' : '▼') : '⇅';
+      html += '<th data-col="' + escapeHtml(col) + '" class="sortable">';
+      html += escapeHtml(formatColHeader(col)) + ' <span class="sort-icon">' + icon + '</span></th>';
+    });
+    html += '</tr></thead><tbody id="resultsBody">';
+
+    pageRows.forEach((cells, i) => {
+      const rowNum = start + i + 1;
+      html += '<tr><td>' + rowNum + '</td>';
+      cells.forEach(c => { html += '<td>' + escapeHtml(c) + '</td>'; });
       html += '</tr>';
     });
+
+    if (pageRows.length === 0) {
+      html += '<tr><td colspan="' + (colHeaders.length + 1) + '" style="text-align:center;padding:2rem;color:var(--clr-muted)">No matching results.</td></tr>';
+    }
+
     html += '</tbody></table>';
+    html += '<div class="pagination" id="pagination"></div>';
+    html += '<p class="row-count" id="rowCount"></p>';
     tableWrapper.innerHTML = html;
+
+    // Render pagination controls
+    const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+    renderPagination(page, totalPages);
+
+    const rc = document.getElementById('rowCount');
+    if (rc) {
+      rc.textContent = filteredRows.length === allRows.length
+        ? 'Showing ' + filteredRows.length + ' result(s)'
+        : 'Showing ' + filteredRows.length + ' of ' + allRows.length + ' result(s) (filtered)';
+    }
+  }
+
+  function renderPagination(page, totalPages) {
+    const pgEl = document.getElementById('pagination');
+    if (!pgEl || totalPages <= 1) return;
+    let html = '';
+    html += '<button class="pg-btn" onclick="renderPage(' + (page - 1) + ')" '
+          + (page <= 1 ? 'disabled' : '') + '>‹ Prev</button>';
+    const start = Math.max(1, page - 2);
+    const end   = Math.min(totalPages, page + 2);
+    if (start > 1) html += '<button class="pg-btn" onclick="renderPage(1)">1</button>'
+                         + (start > 2 ? '<span class="pg-ellipsis">…</span>' : '');
+    for (let p = start; p <= end; p++) {
+      html += '<button class="pg-btn' + (p === page ? ' pg-active' : '') + '" onclick="renderPage(' + p + ')">' + p + '</button>';
+    }
+    if (end < totalPages) {
+      html += (end < totalPages - 1 ? '<span class="pg-ellipsis">…</span>' : '')
+            + '<button class="pg-btn" onclick="renderPage(' + totalPages + ')">' + totalPages + '</button>';
+    }
+    html += '<button class="pg-btn" onclick="renderPage(' + (page + 1) + ')" '
+          + (page >= totalPages ? 'disabled' : '') + '>Next ›</button>';
+    pgEl.innerHTML = html;
+  }
+
+  /* ---- party chart ---- */
+  function buildChart(rows, headers) {
+    const partyIdx  = headers.findIndex(h => /party/i.test(h));
+    const votesIdx  = headers.findIndex(h => /votes?|seats?/i.test(h));
+    const section   = document.getElementById('chartSection');
+    const container = document.getElementById('chartContainer');
+    if (!section || !container || partyIdx < 0 || votesIdx < 0) {
+      if (section) section.style.display = 'none';
+      return;
+    }
+
+    const totals = {};
+    rows.forEach(cells => {
+      const party = cells[partyIdx] || 'Unknown';
+      const val   = parseFloat((cells[votesIdx] || '0').replace(COMMA_RE, ''));
+      if (!isNaN(val)) {
+        totals[party] = (totals[party] || 0) + val;
+      }
+    });
+
+    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (sorted.length === 0) { section.style.display = 'none'; return; }
+
+    const max = sorted[0][1];
+    let html = '';
+    sorted.forEach(([party, count]) => {
+      const pct = max > 0 ? (count / max * 100).toFixed(1) : 0;
+      html += '<div class="chart-row">'
+            + '<span class="chart-label" title="' + escapeHtml(party) + '">' + escapeHtml(party) + '</span>'
+            + '<div class="chart-bar-wrap">'
+            + '<div class="chart-bar" style="width:' + pct + '%"></div>'
+            + '</div>'
+            + '<span class="chart-value">' + count.toLocaleString() + '</span>'
+            + '</div>';
+    });
+    container.innerHTML = html;
+    section.style.display = '';
+  }
+
+  /* ---- security helper ---- */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 </script>
 

@@ -6,13 +6,16 @@ Routes
 GET /              Render the main dashboard (HTML)
 GET /api/results   Return current scraped data as JSON
 POST /api/refresh  Trigger an immediate scrape and return updated data
+GET /api/export/csv  Download current results as a CSV file
 """
 
+import csv
+import io
 import logging
 import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template
 
 from scraper import DEFAULT_SCRAPE_URL, get_cached_data, scrape_and_update
 
@@ -75,6 +78,29 @@ def api_refresh():
     """Trigger an immediate scrape and return updated data as JSON."""
     scrape_and_update(SCRAPE_URL)
     return jsonify(get_cached_data())
+
+
+@app.route("/api/export/csv")
+def api_export_csv():
+    """Download current election results as a CSV file."""
+    data = get_cached_data()
+    results = data.get("results", [])
+
+    output = io.StringIO()
+    if results:
+        fieldnames = list(results[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(results)
+    else:
+        output.write("No data available\n")
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=election_results.csv"},
+    )
 
 
 # ---------------------------------------------------------------------------
