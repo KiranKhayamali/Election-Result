@@ -57,6 +57,35 @@ SAMPLE_TABLE_HTML = """
 </body></html>
 """
 
+# Sample HTML that mimics the Nepal Election Commission portal structure.
+NEPAL_TABLE_HTML = """
+<html><body>
+<table>
+  <tr>
+    <th>Constituency</th>
+    <th>Candidate Name</th>
+    <th>Party Name</th>
+    <th>Votes Received</th>
+    <th>Status</th>
+  </tr>
+  <tr>
+    <td>Kathmandu-1</td>
+    <td>Ram Prasad Sharma</td>
+    <td>Nepali Congress</td>
+    <td>24500</td>
+    <td>Won</td>
+  </tr>
+  <tr>
+    <td>Kathmandu-2</td>
+    <td>Sita Devi Thapa</td>
+    <td>CPN-UML</td>
+    <td>19800</td>
+    <td>Won</td>
+  </tr>
+</table>
+</body></html>
+"""
+
 
 def test_parse_results_table_returns_rows():
     soup = BeautifulSoup(SAMPLE_TABLE_HTML, "lxml")
@@ -71,6 +100,45 @@ def test_parse_results_table_empty():
     soup = BeautifulSoup("<html><body></body></html>", "lxml")
     rows = scraper._parse_results_table(soup)
     assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# scraper._parse_nepal_results
+# ---------------------------------------------------------------------------
+
+
+def test_parse_nepal_results_english_headers():
+    """Nepal parser extracts rows from a table with English column headers."""
+    soup = BeautifulSoup(NEPAL_TABLE_HTML, "lxml")
+    rows = scraper._parse_nepal_results(soup)
+    assert len(rows) == 2
+    assert rows[0]["candidate"] == "Ram Prasad Sharma"
+    assert rows[0]["party"] == "Nepali Congress"
+    assert rows[0]["votes"] == "24500"
+    assert rows[0]["constituency"] == "Kathmandu-1"
+
+
+def test_parse_nepal_results_no_recognised_columns():
+    """Nepal parser returns empty list when no recognised column is present."""
+    html = """<html><body>
+    <table>
+      <tr><th>Foo</th><th>Bar</th></tr>
+      <tr><td>A</td><td>B</td></tr>
+    </table></body></html>"""
+    soup = BeautifulSoup(html, "lxml")
+    rows = scraper._parse_nepal_results(soup)
+    assert rows == []
+
+
+def test_parse_nepal_results_empty_page():
+    soup = BeautifulSoup("<html><body></body></html>", "lxml")
+    rows = scraper._parse_nepal_results(soup)
+    assert rows == []
+
+
+def test_default_scrape_url_is_nepal():
+    """DEFAULT_SCRAPE_URL must point to the Nepal Election Commission portal."""
+    assert scraper.DEFAULT_SCRAPE_URL == "https://result.election.gov.np/"
 
 
 # ---------------------------------------------------------------------------
