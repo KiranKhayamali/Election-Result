@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Panel – Nepal Election Results</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<header>
+  <div class="header-inner">
+    <div class="logo">🗳️</div>
+    <div>
+      <h1>Admin Panel</h1>
+      <p class="subtitle">Nepal Election Results 2082 – Result Management</p>
+    </div>
+    <nav class="admin-nav">
+      <a href="{{ url_for('index') }}" class="nav-link">← Live View</a>
+      <a href="{{ url_for('logout') }}" class="nav-link nav-link-danger">Logout</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ===== Flash / status area ===== -->
+<div id="adminStatus" class="admin-status" style="display:none;"></div>
+
+<!-- ===== Main content ===== -->
+<main>
+
+  <!-- Add Result Form -->
+  <section class="admin-section">
+    <h2>Add Result</h2>
+    <form id="addResultForm" class="add-form" autocomplete="off">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aConstituency">Constituency</label>
+          <input type="text" id="aConstituency" name="constituency" class="form-control" placeholder="e.g. Kathmandu-1" />
+        </div>
+        <div class="form-group">
+          <label for="aCandidate">Candidate Name <span class="required">*</span></label>
+          <input type="text" id="aCandidate" name="candidate" class="form-control" placeholder="Full name" required />
+        </div>
+        <div class="form-group">
+          <label for="aParty">Party</label>
+          <input type="text" id="aParty" name="party" class="form-control" placeholder="e.g. Nepali Congress" />
+        </div>
+        <div class="form-group">
+          <label for="aVotes">Votes</label>
+          <input type="text" id="aVotes" name="votes" class="form-control" placeholder="e.g. 24500" />
+        </div>
+        <div class="form-group">
+          <label for="aStatus">Status</label>
+          <input type="text" id="aStatus" name="status" class="form-control" placeholder="e.g. Won" />
+        </div>
+      </div>
+      <button type="submit" class="btn-primary">＋ Add Result</button>
+    </form>
+  </section>
+
+  <!-- Results Table -->
+  <section class="admin-section">
+    <div class="section-header">
+      <h2>Current Results <span id="resultCount" class="count-badge">{{ data.results | length }}</span></h2>
+    </div>
+
+    <div id="adminTableWrapper">
+      {% if data.results %}
+      <table class="admin-table" id="adminTable">
+        <thead>
+          <tr>
+            <th class="col-index">#</th>
+            {% for col in data.results[0].keys() %}
+            <th>{{ col | replace('_', ' ') | title }}</th>
+            {% endfor %}
+            <th class="col-action">Action</th>
+          </tr>
+        </thead>
+        <tbody id="adminTableBody">
+          {% for row in data.results %}
+          <tr data-idx="{{ loop.index0 }}">
+            <td>{{ loop.index }}</td>
+            {% for val in row.values() %}
+            <td>{{ val }}</td>
+            {% endfor %}
+            <td>
+              <button
+                class="btn-delete"
+                data-idx="{{ loop.index0 }}"
+                title="Remove this result"
+              >🗑 Remove</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state" id="emptyState">
+        <p>No results yet. Use the form above to add one.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer>
+  <p>Admin Panel – Nepal Election Results Live Tracker</p>
+</footer>
+
+<!-- ===== JavaScript ===== -->
+<script>
+  const statusEl = document.getElementById('adminStatus');
+
+  function showStatus(msg, isError = false) {
+    statusEl.textContent = msg;
+    statusEl.className = 'admin-status ' + (isError ? 'admin-status-error' : 'admin-status-ok');
+    statusEl.style.display = 'block';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
+  }
+
+  /* ---- Add result ---- */
+  document.getElementById('addResultForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    const payload = {};
+    fd.forEach((v, k) => { if (v.trim()) payload[k] = v.trim(); });
+    if (!Object.keys(payload).length) {
+      showStatus('Please fill in at least one field.', true);
+      return;
+    }
+    try {
+      const resp = await fetch('/api/admin/results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        showStatus('Error: ' + (err.error || resp.status), true);
+        return;
+      }
+      const data = await resp.json();
+      renderTable(data.results);
+      this.reset();
+      showStatus('Result added successfully.');
+    } catch (err) {
+      showStatus('Network error: ' + err.message, true);
+    }
+  });
+
+  /* ---- Delete result (event delegation) ---- */
+  document.addEventListener('click', async function (e) {
+    const btn = e.target.closest('.btn-delete');
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.idx, 10);
+    if (!confirm('Remove result #' + (idx + 1) + '?')) return;
+    try {
+      const resp = await fetch('/api/admin/results/' + idx, { method: 'DELETE' });
+      if (!resp.ok) {
+        const err = await resp.json();
+        showStatus('Error: ' + (err.error || resp.status), true);
+        return;
+      }
+      const data = await resp.json();
+      renderTable(data.results);
+      showStatus('Result removed.');
+    } catch (err) {
+      showStatus('Network error: ' + err.message, true);
+    }
+  });
+
+  /* ---- Re-render table from results array ---- */
+  function renderTable(results) {
+    document.getElementById('resultCount').textContent = results.length;
+    const wrapper = document.getElementById('adminTableWrapper');
+    if (!results || results.length === 0) {
+      wrapper.innerHTML = '<div class="empty-state" id="emptyState"><p>No results yet. Use the form above to add one.</p></div>';
+      return;
+    }
+    const cols = Object.keys(results[0]);
+    let html = '<table class="admin-table" id="adminTable">';
+    html += '<thead><tr><th class="col-index">#</th>';
+    cols.forEach(c => { html += '<th>' + escapeHtml(formatCol(c)) + '</th>'; });
+    html += '<th class="col-action">Action</th></tr></thead>';
+    html += '<tbody id="adminTableBody">';
+    results.forEach((row, i) => {
+      html += '<tr data-idx="' + i + '"><td>' + (i + 1) + '</td>';
+      cols.forEach(c => { html += '<td>' + escapeHtml(String(row[c] ?? '')) + '</td>'; });
+      html += '<td><button class="btn-delete" data-idx="' + i + '" title="Remove this result">🗑 Remove</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    wrapper.innerHTML = html;
+  }
+
+  function formatCol(col) {
+    return col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+</script>
+
+</body>
+</html>

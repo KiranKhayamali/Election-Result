@@ -16,8 +16,16 @@
       <h1>Nepal Election Results 2082</h1>
       <p class="subtitle">Real-time updates from Election Commission of Nepal</p>
     </div>
-    <div class="live-badge" id="liveBadge">
-      <span class="dot"></span> LIVE
+    <div class="header-right">
+      <div class="live-badge" id="liveBadge">
+        <span class="dot"></span> LIVE
+      </div>
+      {% if is_admin %}
+      <a href="{{ url_for('admin_panel') }}" class="nav-link nav-link-admin">⚙ Admin</a>
+      <a href="{{ url_for('logout') }}" class="nav-link nav-link-danger">Logout</a>
+      {% else %}
+      <a href="{{ url_for('login') }}" class="nav-link">Admin Login</a>
+      {% endif %}
     </div>
   </div>
 </header>
@@ -427,6 +435,20 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
+
+  /* ---- Server-Sent Events – instant live updates ---- */
+  (function connectSSE() {
+    if (!window.EventSource) return; // browser doesn't support SSE
+    const es = new EventSource('/api/stream');
+    es.onmessage = function (e) {
+      // A new version was pushed – fetch the latest results immediately.
+      fetchAndRender('/api/results');
+    };
+    es.onerror = function () {
+      // On error the browser will automatically try to reconnect.
+      // No additional action needed; the polling fallback still runs.
+    };
+  })();
 </script>
 
 </body>
