@@ -45,6 +45,9 @@ _cache: dict[str, Any] = {
     "status": "Initialising…",
     "error": None,
 }
+# Monotonically increasing counter – incremented whenever results change so
+# that SSE listeners can detect updates without comparing full payloads.
+_version: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +61,38 @@ def get_cached_data() -> dict[str, Any]:
         return dict(_cache)
 
 
+def get_version() -> int:
+    """Return the current data version counter."""
+    with _lock:
+        return _version
+
+
+def add_result(row: dict) -> None:
+    """Append *row* to the cached results and bump the version counter."""
+    global _version
+    with _lock:
+        _cache["results"].append(row)
+        _cache["last_updated"] = datetime.now().isoformat(timespec="seconds")
+        _version += 1
+
+
+def remove_result(index: int) -> bool:
+    """
+    Remove the result at *index* from the cache.
+
+    Returns ``True`` on success, ``False`` when the index is out of range.
+    """
+    global _version
+    with _lock:
+        results = _cache["results"]
+        if 0 <= index < len(results):
+            results.pop(index)
+            _cache["last_updated"] = datetime.now().isoformat(timespec="seconds")
+            _version += 1
+            return True
+        return False
+
+
 def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
     """
     Scrape *url* and update the shared cache.
@@ -67,6 +102,7 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
     the parsed rows are stored; otherwise a raw-text fallback is used so
     the caller always receives *something*.
     """
+    global _version
     logger.info("Scraping %s …", url)
     headers = {"User-Agent": USER_AGENT}
 
@@ -97,6 +133,7 @@ def scrape_and_update(url: str = DEFAULT_SCRAPE_URL) -> None:
         _cache["last_updated"] = datetime.now().isoformat(timespec="seconds")
         _cache["status"] = "Live" if results else "No structured data found"
         _cache["error"] = None
+        _version += 1
 
     logger.info("Cache updated: %d rows, status=%s", len(results), _cache["status"])
 

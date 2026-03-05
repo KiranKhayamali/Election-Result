@@ -290,3 +290,178 @@ def test_api_export_csv_empty_cache(client):
     resp = client.get("/api/export/csv")
     assert resp.status_code == 200
     assert b"No data available" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Admin fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def admin_client():
+    """Test client that is already authenticated as admin."""
+    flask_app.config["TESTING"] = True
+    with flask_app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess["admin_logged_in"] = True
+        yield c
+
+
+# ---------------------------------------------------------------------------
+# scraper.add_result / remove_result / get_version
+# ---------------------------------------------------------------------------
+
+
+def test_add_result_appends_row():
+    with scraper._lock:
+        scraper._cache["results"] = []
+        scraper._version = 0
+    scraper.add_result({"candidate": "Test", "party": "Test Party", "votes": "1000"})
+    data = scraper.get_cached_data()
+    assert len(data["results"]) == 1
+    assert data["results"][0]["candidate"] == "Test"
+
+
+def test_add_result_increments_version():
+    with scraper._lock:
+        scraper._version = 0
+    scraper.add_result({"candidate": "X"})
+    assert scraper.get_version() == 1
+
+
+def test_remove_result_success():
+    with scraper._lock:
+        scraper._cache["results"] = [
+            {"candidate": "A"},
+            {"candidate": "B"},
+        ]
+        scraper._version = 0
+    removed = scraper.remove_result(0)
+    assert removed is True
+    data = scraper.get_cached_data()
+    assert len(data["results"]) == 1
+    assert data["results"][0]["candidate"] == "B"
+    assert scraper.get_version() == 1
+
+
+def test_remove_result_out_of_range():
+    with scraper._lock:
+        scraper._cache["results"] = [{"candidate": "A"}]
+        scraper._version = 0
+    removed = scraper.remove_result(99)
+    assert removed is False
+    assert scraper.get_version() == 0  # version unchanged
+
+
+# ---------------------------------------------------------------------------
+# Admin auth
+# ---------------------------------------------------------------------------
+
+
+def test_login_page_returns_200(client):
+    resp = client.get("/login")
+    assert resp.status_code == 200
+    assert b"Login" in resp.data
+
+
+def test_login_with_valid_credentials(client):
+    import app as app_module
+    resp = client.post(
+        "/login",
+        data={"username": app_module.ADMIN_USERNAME, "password": app_module.ADMIN_PASSWORD},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert "/admin" in resp.headers["Location"]
+
+
+def test_login_with_invalid_credentials(client):
+    resp = client.post(
+        "/login",
+        data={"username": "wrong", "password": "wrong"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Invalid" in resp.data
+
+
+def test_admin_panel_requires_login(client):
+    resp = client.get("/admin", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_admin_panel_accessible_when_logged_in(admin_client):
+    resp = admin_client.get("/admin")
+    assert resp.status_code == 200
+    assert b"Admin Panel" in resp.data
+
+
+def test_logout_clears_session(admin_client):
+    admin_client.get("/logout", follow_redirects=False)
+    # Subsequent admin access should redirect to login
+    resp2 = admin_client.get("/admin", follow_redirects=False)
+    assert resp2.status_code == 302
+    assert "/login" in resp2.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# Admin CRUD API
+# ---------------------------------------------------------------------------
+
+
+def test_admin_add_result_requires_auth(client):
+    resp = client.post(
+        "/api/admin/results",
+        data=json.dumps({"candidate": "Test"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 302  # redirect to login
+
+
+def test_admin_add_result_success(admin_client):
+    with scraper._lock:
+        scraper._cache["results"] = []
+    resp = admin_client.post(
+        "/api/admin/results",
+        data=json.dumps({"candidate": "Alice", "party": "Blue Party", "votes": "5000"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 201
+    payload = json.loads(resp.data)
+    assert any(r.get("candidate") == "Alice" for r in payload["results"])
+
+
+def test_admin_add_result_empty_body(admin_client):
+    resp = admin_client.post(
+        "/api/admin/results",
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_admin_remove_result_success(admin_client):
+    with scraper._lock:
+        scraper._cache["results"] = [
+            {"candidate": "Alice"},
+            {"candidate": "Bob"},
+        ]
+    resp = admin_client.delete("/api/admin/results/0")
+    assert resp.status_code == 200
+    payload = json.loads(resp.data)
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["candidate"] == "Bob"
+
+
+def test_admin_remove_result_out_of_range(admin_client):
+    with scraper._lock:
+        scraper._cache["results"] = [{"candidate": "Alice"}]
+    resp = admin_client.delete("/api/admin/results/99")
+    assert resp.status_code == 404
+
+
+def test_admin_remove_result_requires_auth(client):
+    resp = client.delete("/api/admin/results/0")
+    assert resp.status_code == 302  # redirect to login
+
