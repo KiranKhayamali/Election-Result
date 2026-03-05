@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login – Nepal Election Results</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="auth-page">
+
+<div class="auth-card">
+  <div class="auth-logo">🗳️</div>
+  <h1 class="auth-title">Admin Login</h1>
+  <p class="auth-subtitle">Nepal Election Results 2082</p>
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('login') }}" autocomplete="off">
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input
+        type="text"
+        id="username"
+        name="username"
+        class="form-control"
+        placeholder="Enter username"
+        required
+        autofocus
+      />
+    </div>
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input
+        type="password"
+        id="password"
+        name="password"
+        class="form-control"
+        placeholder="Enter password"
+        required
+      />
+    </div>
+    <button type="submit" class="btn-primary btn-block">Login</button>
+  </form>
+
+  <p class="auth-back">
+    <a href="{{ url_for('index') }}">← Back to Results</a>
+  </p>
+</div>
+
+</body>
+</html>
