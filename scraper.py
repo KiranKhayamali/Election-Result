@@ -17,7 +17,7 @@ import re
 import threading
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -273,6 +273,12 @@ def _scrape_single_news_source(source: dict) -> list[dict]:
     return _parse_news_articles(soup, source["name"], source["url"])
 
 
+# Minimum character length for anchor-tag text in the fallback scanner.
+# 35 chars is long enough to exclude navigation labels (Home, Contact …)
+# while still capturing most one-line news headlines.
+_FALLBACK_ANCHOR_MIN_LEN = 35
+
+
 def _parse_news_articles(
     soup: BeautifulSoup, source_name: str, base_url: str
 ) -> list[dict]:
@@ -284,14 +290,12 @@ def _parse_news_articles(
     """
     articles: list[dict] = []
     seen: set[str] = set()
-    parsed_base = urlparse(base_url)
 
     def _make_absolute(link: str) -> str:
+        """Resolve *link* against *base_url*, returning an absolute URL."""
         if link.startswith("http"):
             return link
-        if link.startswith("/"):
-            return f"{parsed_base.scheme}://{parsed_base.netloc}{link}"
-        return base_url
+        return urljoin(base_url, link)
 
     def _add(title: str, link: str, timestamp: str = "") -> None:
         norm = title.lower().strip()
@@ -332,7 +336,7 @@ def _parse_news_articles(
     if not articles:
         for a in soup.find_all("a", href=True):
             text = a.get_text(strip=True)
-            if len(text) > 35:
+            if len(text) > _FALLBACK_ANCHOR_MIN_LEN:
                 _add(text, a["href"])
             if len(articles) >= 20:
                 break

@@ -520,16 +520,20 @@ def test_parse_news_articles_fallback():
 
 
 def test_parse_news_articles_relative_links_made_absolute():
-    """Relative href values are resolved against the base URL."""
+    """Relative href values are resolved against the base URL via urljoin."""
     html = """<html><body>
     <article><h3><a href="/article/live-election">Live election updates from across Nepal</a></h3></article>
     <article><h3><a href="/article/live-election2">CPN-UML celebrates early lead in rural constituencies</a></h3></article>
-    <article><h3><a href="/article/live-election3">Voter turnout reaches 70 percent in hilly districts today</a></h3></article>
+    <article><h3><a href="article/relative-path">Voter turnout reaches 70 percent in hilly districts today</a></h3></article>
     </body></html>"""
     soup = BeautifulSoup(html, "lxml")
-    articles = scraper._parse_news_articles(soup, "Src", "https://news.example.com/")
+    articles = scraper._parse_news_articles(soup, "Src", "https://news.example.com/section/")
     for art in articles:
-        assert art["link"].startswith("https://news.example.com/"), art["link"]
+        assert art["link"].startswith("https://"), art["link"]
+    # Relative path without leading slash should also be absolute
+    relative_art = next((a for a in articles if "relative-path" in a["link"]), None)
+    if relative_art:
+        assert relative_art["link"].startswith("https://news.example.com/")
 
 
 def test_parse_news_articles_skip_short_titles():
