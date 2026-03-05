@@ -180,3 +180,45 @@ def test_api_refresh_calls_scraper(mock_scrape, client):
     mock_scrape.assert_called_once()
     payload = json.loads(resp.data)
     assert "results" in payload
+
+
+# ---------------------------------------------------------------------------
+# CSV export endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_api_export_csv_returns_csv_content_type(client):
+    resp = client.get("/api/export/csv")
+    assert resp.status_code == 200
+    assert "text/csv" in resp.content_type
+
+
+def test_api_export_csv_has_attachment_header(client):
+    resp = client.get("/api/export/csv")
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "attachment" in cd
+    assert "election_results.csv" in cd
+
+
+def test_api_export_csv_with_data(client):
+    """Seed cache with known rows and verify CSV output."""
+    with scraper._lock:
+        scraper._cache["results"] = [
+            {"candidate": "Alice", "party": "Blue", "votes": "12345"},
+            {"candidate": "Bob",   "party": "Red",  "votes": "9876"},
+        ]
+    resp = client.get("/api/export/csv")
+    assert resp.status_code == 200
+    text = resp.data.decode("utf-8")
+    assert "candidate" in text
+    assert "Alice" in text
+    assert "Bob" in text
+
+
+def test_api_export_csv_empty_cache(client):
+    """When no results are cached the response still contains the fallback message."""
+    with scraper._lock:
+        scraper._cache["results"] = []
+    resp = client.get("/api/export/csv")
+    assert resp.status_code == 200
+    assert b"No data available" in resp.data
